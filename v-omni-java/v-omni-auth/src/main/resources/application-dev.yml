@@ -1,0 +1,55 @@
+spring:
+  # Redis 配置
+  data:
+    redis:
+      host: localhost
+      port: 6379
+#      password: ${REDIS_PASSWORD:your_password} # 建议用变量，防止密码泄露到 GitHub
+      database: 0
+      timeout: 2000ms # 连接超时
+      lettuce:
+        pool:
+          max-active: 8    # 最大连接数
+          max-idle: 8      # 最大空闲连接
+          min-idle: 0      # 最小空闲连接
+          max-wait: -1ms   # 连接池阻塞等待时间
+
+  # Kafka 配置 (对应你发送邮件的异步任务)
+  kafka:
+    bootstrap-servers: localhost:19092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      retries: 3 # 失败重试次数
+    consumer:
+      group-id: v-omni-auth-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/omni_db?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=GMT%2B8
+    username: root
+    password: ${V_OMNI_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: 50  # 增加到 50 左右，根据你笔记本性能调整
+      minimum-idle: 10
+      idle-timeout: 30000
+      connection-timeout: 20000
+
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: ${V_OMNI_MAIL_USERNAME}
+    password: ${V_OMNI_MAIL_PASSWORD}
+    protocol: smtps
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          ssl:
+            enable: true

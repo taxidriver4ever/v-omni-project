@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  auth-service:
+    image: v-omni-auth:latest
+    ports:
+      - "18281:18281"
+    depends_on:
+      - my-redis  # 名字必须对齐
+      - my-kafka  # 名字必须对齐
+    networks:
+      - v-omni-network
+
+  my-mysql:
+    image: mysql:8.0
+    container_name: mysql-server
+    restart: always
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+    command: 
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    networks:  # 别忘了让 MySQL 也在同一个网络
+      - v-omni-network
+
+  my-redis:
+    image: redis:7.0
+    container_name: my-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis-data:/data
+    networks:
+      - v-omni-network
+
+  my-kafka:
+    image: 'apache/kafka:latest'
+    container_name: kafka-server
+    ports:
+      - '19092:19092' # 宿主机访问端口
+    environment:
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      # 内部用 9092, 外部用 19092
+      - KAFKA_LISTENERS=INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092,CONTROLLER://0.0.0.0:9093
+      # 【核心】INTERNAL 给 auth-service 用，EXTERNAL 给你的 IDEA 调试用
+      - KAFKA_ADVERTISED_LISTENERS=INTERNAL://my-kafka:9092,EXTERNAL://localhost:19092
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@my-kafka:9093
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+    networks:
+      - v-omni-network
+
+networks:
+  v-omni-network:
+    driver: bridge

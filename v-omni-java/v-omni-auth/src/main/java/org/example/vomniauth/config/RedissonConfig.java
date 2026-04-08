@@ -1,0 +1,27 @@
+package org.example.vomniauth.config;
+
+import org.example.vomniauth.mapper.UserMapper;
+import org.redisson.api.RBloomFilter;
+import org.redisson.api.RedissonClient;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class RedissonConfig {
+
+    @Bean
+    public RBloomFilter<String> emailBloomFilter(RedissonClient redissonClient, UserMapper userMapper) {
+        RBloomFilter<String> bloomFilter = redissonClient.getBloomFilter("v-omni:email:filter");
+
+        // 初始化：预期插入100万个元素，容错率 0.03 (3%)
+        // 注意：初始化只能做一次，如果已经初始化过了，这个调用会被跳过
+        bloomFilter.tryInit(1000000L, 0.03);
+
+        // 【预热逻辑】如果是新部署的项目，这里需要把数据库已有的 email 加载进去
+        // 建议只在项目第一次启动或手动触发时执行
+        // List<String> allEmails = userMapper.selectAllEmails();
+        // allEmails.forEach(bloomFilter::add);
+
+        return bloomFilter;
+    }
+}
