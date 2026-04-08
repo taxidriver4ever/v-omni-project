@@ -41,3 +41,12 @@ V_OMNI_MAIL_PASSWORD=your_auth_code
 
 # Kafka 配置
 V_OMNI_KAFKA_TOPIC_MAIL=auth-code-topic
+```
+---
+
+### 注意事项!!!
+- 如果springboot项目在docker启动需要去将application-dev.yml文件里面
+- kafka: bootstrap-servers: my-kafka:9092
+- mysql: url: jdbc:mysql://mysql-server:3306/omni_db?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=GMT%2B8
+- redis: host: my-redis
+- springboot项目镜像名称记得和compose.yml文件里面的保持一致
