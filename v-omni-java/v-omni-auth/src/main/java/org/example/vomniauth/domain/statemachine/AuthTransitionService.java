@@ -1,27 +1,18 @@
 package org.example.vomniauth.domain.statemachine;
 
-import io.lettuce.core.api.sync.RedisCommands;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.example.vomniauth.mapper.UserMapper;
 import org.jetbrains.annotations.NotNull;
-import org.redisson.api.RLock;
-import org.redisson.api.RedissonClient;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisCallback;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+
 
 @Slf4j
 @Component
@@ -31,27 +22,33 @@ public class AuthTransitionService {
     private AuthAction authAction;
 
     @Resource
-    private JedisPool jedisPool;
+    private StringRedisTemplate stringRedisTemplate;
 
     private final Map<String, Map<AuthState,AuthRule>> rules = new HashMap<>();
 
     @PostConstruct
     public void initRules() {
-        try (Jedis jedis = jedisPool.getResource()) {
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("lua/send_event.lua")) {
+            String lua = new String(Objects.requireNonNull(is).readAllBytes(), StandardCharsets.UTF_8);
 
-            String lua;
-            try (InputStream is = getClass()
-                    .getClassLoader()
-                    .getResourceAsStream("lua/send_event.lua")) {
-
-                lua = new String(Objects.requireNonNull(is).readAllBytes());
-            }
-
-            jedis.functionLoadReplace(lua);
-
-            log.info("Lua 加载完成");
+            // 使用 RedisTemplate 执行 FUNCTION LOAD REPLACE
+            String result = stringRedisTemplate.execute((RedisCallback<String>) connection -> {
+                byte[] scriptBytes = lua.getBytes(StandardCharsets.UTF_8);
+                byte[] response = (byte[]) connection.execute(
+                        "FUNCTION",
+                        "LOAD".getBytes(StandardCharsets.UTF_8),
+                        "REPLACE".getBytes(StandardCharsets.UTF_8),
+                        scriptBytes
+                );
+                if (response != null) {
+                    log.info("lua脚本加载成功");
+                    return new String(response, StandardCharsets.UTF_8);
+                }
+                return null;
+            });
+            log.info("Lua 函数库加载完成，SHA: {}", result);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("加载 Lua 脚本失败", e);
         }
         rules.put(AuthState.INITIAL + ":" + AuthEvent.REGISTER_SEND_CODE,
                 Map.of(
@@ -156,24 +153,50 @@ public class AuthTransitionService {
     public AuthState sendEvent(@NotNull AuthEventContext authEventContext, @NotNull AuthEvent event) {
         Long id = authEventContext.getId();
         String code = authEventContext.getString("code") != null ? authEventContext.getString("code") : "";
-        List<String>args = List.of(id.toString(),event.toString(),code);
-        try (Jedis jedis = jedisPool.getResource()) {
-            List<String> res = (List<String>) jedis.fcall(
-                    "process_event",
-                    List.of(),
-                    args
-            );
+        List<String> args = List.of(id.toString(), event.toString(), code);
 
-            String eventKey = res.get(0);
-            String newState = res.get(1);
+        String res = executeFcallToString(args);
 
-            if(eventKey.equals("ERROR:INVALID_TRANSITION")) return AuthState.valueOf(newState);
-            AuthRule authRule = rules.get(eventKey).get(AuthState.valueOf(newState));
-            authRule.getAction().accept(authEventContext);
-            return AuthState.valueOf(newState);
-        } catch (Exception e) {
-            log.error("状态机处理失败", e);
-            throw new RuntimeException("Event processing failed", e);
-        }
+        int lastColonIndex = res.lastIndexOf(':');
+        String eventKey = res.substring(0, lastColonIndex);
+        String newState = res.substring(lastColonIndex + 1);
+
+        if (eventKey.equals("ERROR:INVALID_TRANSITION")) return AuthState.valueOf(newState);
+        AuthRule authRule = rules.get(eventKey).get(AuthState.valueOf(newState));
+        if(authRule == null) return AuthState.valueOf(newState);
+        authRule.getAction().accept(authEventContext);
+        return AuthState.valueOf(newState);
+    }
+
+    /**
+     * 执行 Redis FCALL 命令，并将返回值强制转换为字符串。
+     * 支持 Redis 返回 byte[]、List<byte[]>（取第一个元素）等情况。
+     *
+     * @param args 传递给函数的参数列表（不包含 numkeys）
+     * @return Redis 返回的字符串（例如 "INITIAL:REGISTER_SEND_CODE:PENDING"）
+     */
+    private String executeFcallToString(List<String> args) {
+        return stringRedisTemplate.execute((RedisCallback<String>) connection -> {
+            // 构建参数：FCALL function_name numkeys [arg1 arg2 ...]
+            List<byte[]> paramList = new ArrayList<>();
+            paramList.add("process_event".getBytes(StandardCharsets.UTF_8));
+            paramList.add("0".getBytes(StandardCharsets.UTF_8)); // numkeys = 0
+            for (String arg : args) {
+                paramList.add(arg.getBytes(StandardCharsets.UTF_8));
+            }
+            byte[][] paramArray = paramList.toArray(new byte[0][]);
+
+            Object response = connection.execute("FCALL", paramArray);
+
+            switch (response) {
+                case null -> throw new RuntimeException("FCALL 返回 null");
+                // 根据实际类型提取字符串
+                case byte[] bytes -> {
+                    return new String(bytes, StandardCharsets.UTF_8);
+                }
+                default -> throw new RuntimeException("FCALL 返回不支持的类型: " + response.getClass());
+            }
+
+        });
     }
 }

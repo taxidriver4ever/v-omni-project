@@ -57,6 +57,7 @@ public class AuthServiceImpl implements AuthService {
     public AuthState processAuthCode(@NotNull AuthCodeRequestDTO authCodeRequestDTO) {
         String email = authCodeRequestDTO.getEmail();
         Long id = identityService.getOrCreateUserIdByEmail(email);
+        if(id == 0L) return AuthState.REGISTERED;
         AuthEventContext authEventContext = new AuthEventContext(id).with("email", email);
         return authTransitionService.sendEvent(authEventContext, AuthEvent.REGISTER_SEND_CODE);
     }

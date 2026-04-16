@@ -4,7 +4,6 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.Update;
 import org.example.vomniauth.po.UserPo;
 
 import java.util.List;
@@ -29,4 +28,7 @@ public interface UserMapper {
 
     @Select("SELECT state FROM u_user WHERE id = #{id}")
     String findStateById(@Param("id") Long id);
+
+    @Select("SELECT id,state FROM u_user WHERE email = #{email}")
+    UserPo findIdStateByEmail(@Param("email") String email);
 }

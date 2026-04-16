@@ -95,7 +95,7 @@ public class AuthCodeConsumer {
         String htmlContent = htmlFormat.formatted(code);
         try {
             // 执行发信
-            redisTemplate.opsForValue().set(
+            stringRedisTemplate.opsForValue().set(
                     "register:code:id:" + id,
                     code.toString(),
                     VERIFICATION_EXPIRE_TIME,
@@ -125,7 +125,7 @@ public class AuthCodeConsumer {
         String htmlContent = htmlFormat.formatted(code);
         try {
             // 执行发信
-            redisTemplate.opsForValue().set(
+            stringRedisTemplate.opsForValue().set(
                     "login:code:id:" + id,
                     code.toString(),
                     VERIFICATION_EXPIRE_TIME,
@@ -148,7 +148,7 @@ public class AuthCodeConsumer {
         long id = Long.parseLong(idString);
         String email = idAndEmail.split(":")[1];
         String username = UsernameGenerator.generateRandomName();
-        UserPo user = new UserPo(id,email,username,AuthState.REGISTERED);
+        UserPo user = new UserPo(id,username,email,AuthState.REGISTERED);
 
         int i = userMapper.insertUser(user);
         if(i == 0)

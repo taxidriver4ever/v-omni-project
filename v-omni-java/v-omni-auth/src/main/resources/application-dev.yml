@@ -8,7 +8,13 @@ spring:
       port: 6379
       database: 0
       timeout: 2000ms
-      client-type: jedis
+      lettuce:
+        pool:
+          max-active: 50   # Lettuce 连接池最大连接数（建议比 Jedis 小很多）
+          max-idle: 20
+          min-idle: 5
+          max-wait: 1000ms
+          time-between-eviction-runs: 30s
 
   # Kafka（关键修复点）
   kafka:

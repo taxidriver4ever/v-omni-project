@@ -197,13 +197,13 @@ redis.register_function('process_event', function(keys, args)
     local state_key = 'auth:state:id:' .. user_id
     local current_state = redis.call('GET', state_key) or 'INITIAL'
     local event_key = current_state .. ':' .. event
-    local state_ttl = 300
+    local state_ttl = 3600
 
     -- 从映射表中查找策略函数
     local strategy_func = strategy_map[event_key]
     if not strategy_func then
         -- 未定义的状态转移：返回错误标识，Java 侧可据此处理
-        return { 'ERROR:INVALID_TRANSITION', current_state }
+        return 'ERROR:INVALID_TRANSITION:' .. current_state
     end
 
     -- 执行策略函数，根据函数是否需要 input_code 传递参数
@@ -222,5 +222,5 @@ redis.register_function('process_event', function(keys, args)
         new_state = current_state  -- 防御：策略函数应保证非空返回
     end
 
-    return { event_key, new_state }
+    return event_key .. ":" .. new_state
 end)

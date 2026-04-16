@@ -1,13 +1,22 @@
 package org.example.vomniauth.service.impl;
 
 import jakarta.annotation.Resource;
+import org.example.vomniauth.domain.statemachine.AuthState;
 import org.example.vomniauth.mapper.UserMapper;
+import org.example.vomniauth.po.UserPo;
 import org.example.vomniauth.service.IdentityService;
+import org.example.vomniauth.strategy.IdentityResolutionStrategy;
+import org.example.vomniauth.strategy.IdentityStrategySelector;
 import org.example.vomniauth.util.SnowflakeIdWorker;
+import org.redisson.api.RBloomFilter;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.data.redis.connection.RedisStringCommands;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.types.Expiration;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -30,29 +39,25 @@ public class IdentityServiceImpl implements IdentityService {
     private UserMapper userMapper;
 
     @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
     private RedissonClient redissonClient;
 
     @Resource
     private DefaultRedisScript<Long> getOrCreateIdScript;
 
+    @Resource
+    private IdentityStrategySelector identityStrategySelector;
+
+    @Resource
+    private RBloomFilter<String> emailBloomFilter;
+
     @Override
     public Long getOrCreateUserIdByEmail(String email) {
-        String emailToIdKey = "auth:id:email:" + email;
-
-        Object o = redisTemplate.opsForValue().get(emailToIdKey);
-        if (o != null) return Long.parseLong(o.toString());
-
-        long id = snowflakeIdWorker.nextId();
-        String stateKey = "auth:state:id:" + id;
-
-        List<String>keys = List.of(emailToIdKey,stateKey);
-        return redisTemplate.execute(
-                getOrCreateIdScript,
-                keys,
-                id,
-                EMAIL_TO_ID_TTL,
-                ID_STATE_TTL
-        );
+        boolean contains = emailBloomFilter.contains(email);
+        IdentityResolutionStrategy select = identityStrategySelector.select(contains);
+        return select.resolve(email);
     }
 
     @Override
@@ -60,41 +65,49 @@ public class IdentityServiceImpl implements IdentityService {
         String cacheKey = "auth:id:email:" + email;
         String lockKey = "lock:auth:id:email:" + email;
 
-        Object cacheObj = redisTemplate.opsForValue().get(cacheKey);
-        if (cacheObj != null) {
-            long id = Long.parseLong(cacheObj.toString());
-            return id > 0 ? id : 0L;
-        }
+        // 1. 查缓存，处理空值
+        String cached = stringRedisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) return Long.parseLong(cached);
 
         RLock lock = redissonClient.getLock(lockKey);
+        int maxRetry = 3;
+        while (maxRetry-- > 0) {
+            try {
+                if (lock.tryLock(1, TimeUnit.SECONDS)) {
+                    try {
+                        // 双重检查
+                        cached = stringRedisTemplate.opsForValue().get(cacheKey);
+                        if (cached != null) return Long.parseLong(cached);
 
-        try {
-            // 等待最多 3 秒，锁持有最多 10 秒
-            boolean locked = lock.tryLock(3, 10, TimeUnit.SECONDS);
+                        Long id = userMapper.findIdByEmail(email);
 
-            if (!locked) {
-                // 没抢到锁，短暂等待后重试（防止惊群）
+                        if(id == null) return 0L;
+
+                        String stateKey = "auth:state:id:" + id;
+
+                        stringRedisTemplate.opsForValue().set(
+                                stateKey,
+                                AuthState.REGISTERED.toString(),
+                                ID_STATE_TTL,
+                                TimeUnit.SECONDS
+                        );
+                        stringRedisTemplate.opsForValue().set(cacheKey, id.toString(), EMAIL_TO_ID_TTL, TimeUnit.SECONDS);
+
+                        return id;
+                    } finally {
+                        if (lock.isHeldByCurrentThread()) {
+                            lock.unlock();
+                        }
+                    }
+                }
+                // 未获取到锁，短暂休眠后重试
                 Thread.sleep(30);
-                return getIdByEmail(email); // 递归重试（或改成 while 循环）
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("获取ID操作被中断", e);
             }
-
-            cacheObj = redisTemplate.opsForValue().get(cacheKey);
-
-            if (cacheObj != null) return Long.parseLong(cacheObj.toString());
-
-            Long id = userMapper.findIdByEmail(email);
-
-            if (id == null)
-                return 0L;
-            redisTemplate.opsForValue().set(cacheKey, id, EMAIL_TO_ID_TTL, TimeUnit.SECONDS);
-            return id;
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("获取邮箱对应ID时被中断", e);
-        } finally {
-            lock.unlock();
         }
+        throw new RuntimeException("系统繁忙，请稍后重试");
     }
 
 }
