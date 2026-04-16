@@ -5,8 +5,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.example.vomniauth.common.MyResult;
+import org.example.vomniauth.domain.statemachine.AuthState;
 import org.example.vomniauth.dto.AuthCodeRequestDTO;
 import org.example.vomniauth.service.AuthService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -21,65 +23,109 @@ public class AuthController {
 
     @PostMapping("/register/code")
     public MyResult<String> sendRegisterCode(@RequestBody @Valid AuthCodeRequestDTO authCodeRequestDTO) {
-        Long l = authService.processAuthCode(authCodeRequestDTO);
-        if(l != null) {
-            if(l.equals(0L))
-                return MyResult.success("用户已经注册");
-            else if(l.equals(1L))
-                return MyResult.success("发送成功");
-            else if(l.equals(-1L))
-                return MyResult.error(429,"发送过于频繁稍后重试");
+        AuthState authState = authService.processAuthCode(authCodeRequestDTO);
+        switch (authState) {
+            case EXCEED_LIMIT -> {
+                return MyResult.error(429,"发送过于频繁，请5分钟后重试");
+            }
+            case PENDING -> {
+                return MyResult.success();
+            }
+            case BLOCKED -> {
+                return MyResult.error(403,"该用户已被锁定");
+            }
+            case ERROR -> {
+                return MyResult.error(429,"系统繁忙");
+            }
+            default -> {
+                return MyResult.error(409,"该用户已经注册");
+            }
         }
-        return MyResult.error(500,"未知错误");
     }
 
     @PostMapping("/register/verify")
     public MyResult<String> verifyRegisterCode(@RequestBody @Valid AuthCodeRequestDTO authCodeRequestDTO) {
-        Long l = authService.verifyAuthCode(authCodeRequestDTO);
-        if(l != null) {
-            if(l.equals(1L))
-                return MyResult.success("用户注册成功");
-            else if(l.equals(2L))
-                return MyResult.success("验证成功");
-            else if(l.equals(-1L))
-                return MyResult.error(400,"验证码输入错误");
-            else if(l.equals(-2L))
-                return MyResult.error(404,"用户信息不存在");
-            else if(l.equals(-3L))
-                return MyResult.error(400,"验证码已过期");
-            else if(l.equals(-4L))
-                return MyResult.error(429,"验证码输入错误多次账号已被锁定");
+        AuthState authState = authService.verifyAuthCode(authCodeRequestDTO);
+        switch (authState) {
+            case EXCEED_LIMIT -> {
+                return MyResult.error(429,"发送过于频繁，请5分钟后重试");
+            }
+            case VERIFIED -> {
+                return MyResult.success();
+            }
+            case BLOCKED -> {
+                return MyResult.error(403,"该用户已被锁定");
+            }
+            case PENDING, INITIAL -> {
+                return MyResult.error(400,"验证码错误");
+            }
+            case ERROR -> {
+                return MyResult.error(429,"系统繁忙");
+            }
+            default -> {
+                return MyResult.error(409,"该用户已经注册");
+            }
         }
-        return MyResult.error(500,"未知错误");
     }
 
     @PostMapping("/login/code")
     public MyResult<String> sendLoginCode(@RequestBody @Valid AuthCodeRequestDTO authCodeRequestDTO) {
-        Long l = authService.processLoginCode(authCodeRequestDTO);
-        if(l != null) {
-            if(l.equals(1L))
-                return MyResult.success("发送成功");
-            else if(l.equals(-1L))
-                return MyResult.error(429,"发送过于频繁稍后重试");
+        AuthState authState = authService.processLoginCode(authCodeRequestDTO);
+        switch (authState) {
+            case EXCEED_LIMIT -> {
+                return MyResult.error(429,"发送过于频繁，请5分钟后重试");
+            }
+            case PENDING_LOGIN -> {
+                return MyResult.success();
+            }
+            case BLOCKED -> {
+                return MyResult.error(403,"该用户已被锁定");
+            }
+            case ERROR -> {
+                return MyResult.error(429,"系统繁忙");
+            }
+            default -> {
+                return MyResult.error(404,"请求用户尚无注册");
+            }
         }
-        return MyResult.error(500,"未知错误");
     }
 
     @PostMapping("/login/verify")
-    public MyResult<String> verifyLoginCode(HttpServletResponse response, @RequestBody @Valid AuthCodeRequestDTO authCodeRequestDTO) {
-        Map<String, String> stringStringMap = authService.verifyLoginCode(response, authCodeRequestDTO);
-        if(stringStringMap != null) {
-            if("1".equals(stringStringMap.get("code"))) return MyResult.success(stringStringMap.get("token"));
-            else if("-1".equals(stringStringMap.get("code"))) return MyResult.error(400,"验证码错误");
-            else if("-2".equals(stringStringMap.get("code"))) return MyResult.error(429,"访问过于频繁");
+    public MyResult<String> verifyLoginCode(HttpServletResponse response,
+                                            @RequestBody @Valid AuthCodeRequestDTO authCodeRequestDTO) {
+        Map<String, String> stringStringMap = authService.verifyLoginCode(authCodeRequestDTO);
+        AuthState authState = AuthState.valueOf(stringStringMap.get("state"));
+        switch (authState) {
+            case EXCEED_LIMIT -> {
+                return MyResult.error(429,"发送过于频繁，请5分钟后重试");
+            }
+            case LOGGED_IN -> {
+                String cookie = stringStringMap.get("cookie");
+                String accessToken = stringStringMap.get("access_token");
+                response.addHeader(HttpHeaders.SET_COOKIE, cookie);
+                return MyResult.success(accessToken);
+            }
+            case PENDING_LOGIN, REGISTERED -> {
+                return MyResult.error(400,"验证码错误");
+            }
+            case BLOCKED -> {
+                return MyResult.error(403,"该用户已被锁定");
+            }
+            case ERROR -> {
+                return MyResult.error(429,"系统繁忙");
+            }
+            default -> {
+                return MyResult.error(404,"请求用户尚无注册");
+            }
         }
-        return MyResult.error(500,"未知错误");
     }
 
     @GetMapping("/logout")
-    public MyResult<String> logout(HttpServletResponse response, HttpServletRequest request) {
-        authService.logout(response, request);
-        return MyResult.success("注销成功");
+    public MyResult<String> logout(HttpServletResponse response,
+                                   @RequestHeader("Authorization") String authHeader) {
+        String accessToken = authHeader.replace("Bearer ", "");
+        authService.logout(response, accessToken);
+        return MyResult.success();
     }
 
 }

@@ -2,17 +2,17 @@ package org.example.vomniauth.consumer;
 
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.example.vomniauth.domain.statemachine.AuthState;
 import org.example.vomniauth.mapper.UserMapper;
 import org.example.vomniauth.po.UserPo;
 import org.example.vomniauth.service.MailService;
 import org.example.vomniauth.util.SnowflakeIdWorker;
 import org.example.vomniauth.util.UsernameGenerator;
+import org.jetbrains.annotations.NotNull;
 import org.redisson.api.RBloomFilter;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.mail.MailSender;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -69,32 +69,39 @@ public class AuthCodeConsumer {
     private RedisTemplate<String,Object> redisTemplate;
 
     @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
     private UserMapper userMapper;
 
     @Resource
     private RBloomFilter<String> emailBloomFilter;
 
-    private final static int EXPIRE_TIME = 7 * 24 * 60 * 60;
+    private final static int REGISTERED_TTL = 60 * 60;
 
     private final static int VERIFICATION_EXPIRE_TIME = 60 * 5;
 
     @KafkaListener(topics = "auth-code-topic", groupId = "v-omni-auth-group")
-    public void authCodeTopicConsume(String email) {
+    public void authCodeTopicConsume(@NotNull String idAndEmail) {
+        String id = idAndEmail.split(":")[0];
+        String email = idAndEmail.split(":")[1];
         log.info("注册收到 Kafka 邮件任务: {}", email);
+
         StringBuilder code = new StringBuilder();
         Random r = new Random();
         for(int i = 0;i<6;i++)
             code.append(r.nextInt(10));
+
         String htmlContent = htmlFormat.formatted(code);
         try {
             // 执行发信
-            mailService.sendHtmlMail(email, "【V-Omni】注册验证码", htmlContent);
-            redisTemplate.opsForValue().setIfAbsent(
-                    "register:email:" + email + ":code",
-                    code,
+            redisTemplate.opsForValue().set(
+                    "register:code:id:" + id,
+                    code.toString(),
                     VERIFICATION_EXPIRE_TIME,
                     TimeUnit.SECONDS
             );
+//            mailService.sendHtmlMail(email, "【V-Omni】注册验证码", htmlContent);
             log.info("注册邮件发送成功: {}", email);
         } catch (Exception e) {
             log.error("注册邮件发送彻底失败，开始回滚 Redis 状态: {}", email);
@@ -105,32 +112,26 @@ public class AuthCodeConsumer {
     }
 
     @KafkaListener(topics = "login-code-topic", groupId = "v-omni-auth-group")
-    public void loginCodeTopicConsume(String email) {
+    public void loginCodeTopicConsume(@NotNull String idAndEmail) {
+        String id = idAndEmail.split(":")[0];
+        String email = idAndEmail.split(":")[1];
         log.info("登录收到 Kafka 邮件任务: {}", email);
+
         StringBuilder code = new StringBuilder();
         Random r = new Random();
         for(int i = 0;i<6;i++)
             code.append(r.nextInt(10));
+
         String htmlContent = htmlFormat.formatted(code);
         try {
             // 执行发信
-            String username = userMapper.findUsernameByEmail(email);
-            if (username != null) {
-                // 使用普通 set 确保覆盖更新，避免 setIfAbsent 在 Kafka 重试时跳过写入
-                redisTemplate.opsForValue().set(
-                        "login:email:" + email + ":username",
-                        username,
-                        VERIFICATION_EXPIRE_TIME * 2,
-                        TimeUnit.SECONDS
-                );
-            }
-            mailService.sendHtmlMail(email, "【V-Omni】登录验证码", htmlContent);
-            redisTemplate.opsForValue().setIfAbsent(
-                    "login:email:" + email + ":code",
-                    code,
+            redisTemplate.opsForValue().set(
+                    "login:code:id:" + id,
+                    code.toString(),
                     VERIFICATION_EXPIRE_TIME,
                     TimeUnit.SECONDS
             );
+//            mailService.sendHtmlMail(email, "【V-Omni】登录验证码", htmlContent);
             log.info("登录邮件发送成功: {}", email);
         } catch (Exception e) {
             log.error("登录邮件发送彻底失败，开始回滚 Redis 状态: {}", email);
@@ -141,19 +142,24 @@ public class AuthCodeConsumer {
     }
 
     @KafkaListener(topics = "input-user-information-topic", groupId = "v-omni-auth-group")
-    public void inputUserInformationTopicConsume(String email) {
-        long id = snowflakeIdWorker.nextId();
+    public void inputUserInformationTopicConsume(@NotNull String idAndEmail) {
+        String idString = idAndEmail.split(":")[0];
+
+        long id = Long.parseLong(idString);
+        String email = idAndEmail.split(":")[1];
         String username = UsernameGenerator.generateRandomName();
-        UserPo user = UserPo.builder()
-                .id(id)
-                .email(email)
-                .username(username)
-                .build();
+        UserPo user = new UserPo(id,email,username,AuthState.REGISTERED);
+
         int i = userMapper.insertUser(user);
         if(i == 0)
             log.info("邮箱{}sql插入错误", email);
         else if(i == 1) {
-            redisTemplate.opsForValue().set("user:email:" + email + ":state", 2, EXPIRE_TIME, TimeUnit.SECONDS);
+            stringRedisTemplate.opsForValue().set(
+                    "auth:state:id:" + idString,
+                    AuthState.REGISTERED.toString(),
+                    REGISTERED_TTL,
+                    TimeUnit.SECONDS
+            );
             emailBloomFilter.add(email);
         }
     }

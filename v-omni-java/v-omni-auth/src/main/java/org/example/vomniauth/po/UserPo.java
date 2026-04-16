@@ -8,6 +8,7 @@ import java.io.Serializable;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.NoArgsConstructor;
+import org.example.vomniauth.domain.statemachine.AuthState;
 
 import java.time.LocalDateTime;
 
@@ -18,7 +19,6 @@ import java.time.LocalDateTime;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class UserPo implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
@@ -30,7 +30,15 @@ public class UserPo implements Serializable {
     private Long id;
     private String username;
     private String email;
+    private String state;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    public UserPo(Long id, String username, String email, AuthState authState) {
+        this.id = id;
+        this.username = username;
+        this.email = email;
+        this.state = authState.toString();
+    }
 }
 

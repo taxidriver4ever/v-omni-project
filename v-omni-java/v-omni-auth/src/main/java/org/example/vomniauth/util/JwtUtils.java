@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.Resource;
 import org.example.vomniauth.po.UserPo;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 
 @Component
 public class JwtUtils {
@@ -19,6 +21,9 @@ public class JwtUtils {
     private String secretKeyString; // 变量名建议小驼峰
 
     private SecretKey KEY; // 去掉 final，因为要在初始化方法里赋值
+
+    @Resource
+    private SnowflakeIdWorker snowflakeIdWorker;
 
     // 关键：在依赖注入完成后执行
     @PostConstruct
@@ -32,11 +37,11 @@ public class JwtUtils {
     /**
      * AccessToken: 存入丰富的用户数据
      */
-    public String generateAccessToken(String email,String username) {
+    public String generateAccessToken(String id) {
         return Jwts.builder()
-                .subject(email)
-                .claim("un", username) // 用户名
-                .claim("type", "access")
+                .subject(id)
+                .id(String.valueOf(snowflakeIdWorker.nextId()))
+                .claim("type", "access_token")
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + ACCESS_EXP))
                 .signWith(KEY)
@@ -46,10 +51,10 @@ public class JwtUtils {
     /**
      * RefreshToken: 只存 Email，保持轻量和安全
      */
-    public String generateRefreshToken(String email) {
+    public String generateRefreshToken(String id) {
         return Jwts.builder()
-                .subject(email)
-                .claim("type", "refresh")
+                .subject(id)
+                .claim("type", "refresh_token")
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + REFRESH_EXP))
                 .signWith(KEY)

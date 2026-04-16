@@ -1,15 +1,24 @@
 version: '3.8'
 
 services:
-  auth-service:
-    image: v-omni-auth:latest
-    ports:
-      - "18281:18281"
-    depends_on:
-      - my-redis  # 名字必须对齐
-      - my-kafka  # 名字必须对齐
-    networks:
-      - v-omni-network
+
+  # auth-service:
+  #   image: v-omni-auth:v6
+  #   ports:
+  #     - "18281:18281"
+  #   env_file:
+  #     - v-omni-java/v-omni-auth/.env
+  #   environment:
+  #     # 🚨 强制覆盖（防止 yml 没生效）
+  #     - SPRING_KAFKA_BOOTSTRAP_SERVERS=my-kafka:9092
+  #     - SPRING_REDIS_HOST=my-redis
+  #     - SPRING_DATASOURCE_URL=jdbc:mysql://mysql-server:3306/omni_db
+  #   depends_on:
+  #     - my-redis
+  #     - my-kafka
+  #     - my-mysql
+  #   networks:
+  #     - v-omni-network
 
   my-mysql:
     image: mysql:8.0
@@ -21,11 +30,11 @@ services:
       MYSQL_ROOT_PASSWORD: 123456
     volumes:
       - ./mysql-data:/var/lib/mysql
-    command: 
+    command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --default-authentication-plugin=mysql_native_password
-    networks:  # 别忘了让 MySQL 也在同一个网络
+    networks:
       - v-omni-network
 
   my-redis:
@@ -40,22 +49,23 @@ services:
       - v-omni-network
 
   my-kafka:
-    image: 'apache/kafka:latest'
-    container_name: kafka-server
+    image: apache/kafka:latest
+    container_name: my-kafka   # ✅ 统一名字（非常重要）
     ports:
-      - '19092:19092' # 宿主机访问端口
+      - "19092:19092"
     environment:
-      - KAFKA_NODE_ID=1
-      - KAFKA_PROCESS_ROLES=broker,controller
-      # 内部用 9092, 外部用 19092
-      - KAFKA_LISTENERS=INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092,CONTROLLER://0.0.0.0:9093
-      # 【核心】INTERNAL 给 auth-service 用，EXTERNAL 给你的 IDEA 调试用
-      - KAFKA_ADVERTISED_LISTENERS=INTERNAL://my-kafka:9092,EXTERNAL://localhost:19092
-      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@my-kafka:9093
-      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
-      - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
-      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092,CONTROLLER://0.0.0.0:9093
+
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://my-kafka:9092,EXTERNAL://localhost:19092
+
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@my-kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     networks:
       - v-omni-network
 
