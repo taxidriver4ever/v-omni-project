@@ -18,3 +18,21 @@ CREATE TABLE `u_user` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_email` (`email`) -- 核心：保证邮箱唯一，支撑你的 Lua 逻辑
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户基本信息表';
+
+
+DROP TABLE IF EXISTS `u_media`;
+CREATE TABLE `u_media` (
+  `id` BIGINT NOT NULL COMMENT '分布式雪花ID（视频主键）',
+  `state` VARCHAR(50) NOT NULL COMMENT '视频状态',
+  `title` VARCHAR(50) NOT NULL COMMENT '视频标题',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `url` VARCHAR(512) NOT NULL COMMENT '视频存储地址',
+  `user_id` BIGINT NOT NULL COMMENT '上传用户ID',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_state` (`state`),
+  KEY `idx_title` (`title`),
+  KEY `idx_create_time` (`create_time`),
+  CONSTRAINT `fk_media_user` FOREIGN KEY (`user_id`) REFERENCES `u_user` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频信息表';

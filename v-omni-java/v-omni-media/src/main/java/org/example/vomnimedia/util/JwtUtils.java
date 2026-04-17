@@ -1,11 +1,10 @@
-package org.example.vomniauth.util;
+package org.example.vomnimedia.util;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
-import org.example.vomniauth.po.UserPo;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -21,7 +20,6 @@ public class JwtUtils {
     private String secretKeyString; // 变量名建议小驼峰
 
     private SecretKey KEY; // 去掉 final，因为要在初始化方法里赋值
-
 
     // 关键：在依赖注入完成后执行
     @PostConstruct
