@@ -30,7 +30,7 @@ public class FfmpegServiceImpl implements FfmpegService {
     private MinioService minioService;
 
     @Override
-    public String compressAndConvertToHLSAndUploadToMinio(String id,String inputVideoUrl, String bucketName, int crf, String maxBitrate) throws Exception {
+    public void compressAndConvertToHLSAndUploadToMinio(String id,String inputVideoUrl, String bucketName, int crf, String maxBitrate) throws Exception {
         // 1. 创建临时目录
         Path tempDir = Files.createTempDirectory("hls_temp_");
         String tempDirPath = tempDir.toString();
@@ -46,15 +46,10 @@ public class FfmpegServiceImpl implements FfmpegService {
         String remotePrefix = "hls/" + id + "/";
         minioService.uploadDirectory(tempDir.toFile(), bucketName, remotePrefix);
 
-        // 4. 获取 m3u8 文件的预签名 URL（有效期 7 天）
-        String remoteM3u8Object = remotePrefix + "master.m3u8";
-        String playUrl = minioService.getDownloadUrl(bucketName, remoteM3u8Object);
-
         // 5. 清理本地临时目录
         deleteDirectory(tempDir.toFile());
 
-        log.info("HLS 已上传至 MinIO，桶: {}，播放地址: {}", bucketName, playUrl);
-        return playUrl;
+        log.info("HLS 已上传至 MinIO，桶: {}", bucketName);
     }
 
     @Override

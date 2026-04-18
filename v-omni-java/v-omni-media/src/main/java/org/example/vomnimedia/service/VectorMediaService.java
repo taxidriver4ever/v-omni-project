@@ -8,5 +8,4 @@ import java.util.Map;
 public interface VectorMediaService {
     void upsert(DocumentVectorMediaPo doc) throws IOException;
     void updateFields(String id, Map<String, Object> fields) throws IOException;
-    void update(DocumentVectorMediaPo doc) throws IOException;
 }

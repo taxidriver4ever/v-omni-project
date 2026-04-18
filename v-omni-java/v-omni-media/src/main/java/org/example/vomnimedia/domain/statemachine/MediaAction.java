@@ -48,7 +48,7 @@ public class MediaAction {
             String userId = mediaEventContext.getString("userId");
             String title = mediaEventContext.getString("title");
             String rawsVideoUploadUrl = minioService.getRawsVideoUploadUrl(id.toString());
-            MediaPo mediaPo = new MediaPo(id,"preparing",Long.parseLong(userId),MediaState.PREPARE_PUBLISH_MEDIA, title);
+            MediaPo mediaPo = new MediaPo(id,Long.parseLong(userId),MediaState.PREPARE_PUBLISH_MEDIA, title);
             mediaMapper.insertUser(mediaPo);
             mediaEventContext.with("preSign", rawsVideoUploadUrl);
         } catch (Exception e) {
@@ -82,7 +82,6 @@ public class MediaAction {
 
     private void synToDatabase(@NotNull MediaEventContext mediaEventContext) {
         Long id = mediaEventContext.getId();
-        String url = stringRedisTemplate.opsForValue().get("media:url:id:" + id.toString());
         float[] vectorFromRedis = getVectorFromRedis(mediaEventContext);
 
         if (vectorFromRedis == null) return;
@@ -95,14 +94,13 @@ public class MediaAction {
                 mediaMapper.selectMediaWithAuthor(mediaEventContext.getId());
 
         documentVectorMediaPo.setEmbedding(vectorFormat);
-        documentVectorMediaPo.setUrl(url);
 
         try {
             vectorMediaService.upsert(documentVectorMediaPo);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        mediaMapper.updateStateAndUrl(mediaEventContext.getId(), MediaState.FINISHED.toString(), url);
+        mediaMapper.updateStateAndUrl(id, MediaState.FINISHED.toString());
     }
 
     private float[] getVectorFromRedis(@NotNull MediaEventContext mediaEventContext) {

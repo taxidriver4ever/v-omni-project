@@ -93,7 +93,7 @@ public class MediaConsumer {
         ByteBuffer.wrap(bytes).asFloatBuffer().put(floats);
         byteRedisTemplate.opsForValue().set("media:vector:id:" + id, bytes, Duration.ofMinutes(15));
 
-        MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id)).with("downloadUrl", downloadUrl);
+        MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id));
         mediaTransitionService.sendEvent(mediaEventContext, MediaEvent.FINISH_EXTRACTION);
     }
 
@@ -102,10 +102,8 @@ public class MediaConsumer {
         String[] parts = message.split("\\|");
         String id = parts[0];
         String downloadUrl = parts[1];
-        String finalDownloadUrl = ffmpegService.compressAndConvertToHLSAndUploadToMinio(id, downloadUrl, "final-video");
-
-        stringRedisTemplate.opsForValue().set("media:url:id:" + id, finalDownloadUrl, Duration.ofMinutes(10));
-        MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id)).with("finalDownloadUrl", finalDownloadUrl);
+        ffmpegService.compressAndConvertToHLSAndUploadToMinio(id, downloadUrl, "final-video");
+        MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id));
         mediaTransitionService.sendEvent(mediaEventContext, MediaEvent.FINISH_DECODING);
     }
 

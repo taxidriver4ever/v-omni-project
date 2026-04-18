@@ -36,7 +36,7 @@ spring:
     password: ${V_OMNI_DATASOURCE_PASSWORD}
 
   elasticsearch:
-    uris: http://localhost:9200
+    uris: http://localhost:19200
 
 minio:
   endpoint: http://localhost:9000

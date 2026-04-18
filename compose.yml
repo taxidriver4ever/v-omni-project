@@ -52,7 +52,6 @@ services:
     image: apache/kafka:latest
     container_name: my-kafka   # ✅ 统一名字（非常重要）
     ports:
-      - "9092:9092"
       - "19092:19092"
     environment:
       KAFKA_NODE_ID: 1
@@ -125,15 +124,27 @@ services:
     container_name: my-elasticsearch
     restart: always
     ports:
-      - "9200:9200"
+      - "19200:9200"
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false   # 🚨 关闭认证（开发环境必备）
+      - xpack.security.enabled=false
       - ES_JAVA_OPTS=-Xms1g -Xmx1g
     volumes:
       - ./es-data:/usr/share/elasticsearch/data
     networks:
       - v-omni-network
+
+# # 1. 进入容器
+# docker exec -it my-elasticsearch bash
+
+# # 2. 安装插件（已安装过会提示已存在，可忽略）
+# ./bin/elasticsearch-plugin install --batch https://get.infini.cloud/elasticsearch/analysis-ik/8.12.2
+
+# # 3. 退出容器
+# exit
+
+# # 4. 重启容器使插件生效
+# docker restart my-elasticsearch
 
   my-kibana:
     image: docker.elastic.co/kibana/kibana:8.12.2
@@ -146,6 +157,37 @@ services:
       - my-elasticsearch
     networks:
       - v-omni-network
+  
+  my-tei:
+    # 1. 换成专门的 cuda 版本镜像
+    image: ghcr.io/huggingface/text-embeddings-inference:89-latest 
+    # 注意：如果你的显卡很新（30系/40系），建议用 turing-latest 或特定版本
+    container_name: my-tei
+    ports:
+      - "8080:80"
+    volumes:
+      - ./tei-data:/data
+    # 2. 移除之前的 --max-batch-tokens 限制（显卡能带更多）
+    command: 
+      - "--model-id"
+      - "BAAI/bge-large-zh-v1.5"
+      - "--port"
+      - "80"
+      - "--max-concurrent-requests"
+      - "128"  # 提高并发上限
+      - "--max-batch-requests"
+      - "32"   # 强制开启更大的批处理
+    networks:
+      - v-omni-network
+    # 3. 核心：给容器分配 GPU 权限
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
 
 networks:
   v-omni-network:

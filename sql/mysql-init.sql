@@ -27,7 +27,6 @@ CREATE TABLE `u_media` (
   `title` VARCHAR(50) NOT NULL COMMENT '视频标题',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  `url` VARCHAR(512) NOT NULL COMMENT '视频存储地址',
   `user_id` BIGINT NOT NULL COMMENT '上传用户ID',
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
@@ -36,3 +35,4 @@ CREATE TABLE `u_media` (
   KEY `idx_create_time` (`create_time`),
   CONSTRAINT `fk_media_user` FOREIGN KEY (`user_id`) REFERENCES `u_user` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频信息表';
+

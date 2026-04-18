@@ -1,0 +1,23 @@
+DELETE /vector_media_index
+
+PUT /vector_media_index
+{
+  "mappings": {
+    "properties": {
+      "title": { "type": "text", "analyzer": "ik_max_word" },
+      "author": { "type": "keyword" },
+      "url": { "type": "keyword" },
+      "embedding": {
+        "type": "dense_vector",
+        "dims": 1024,
+        "index": true,
+        "similarity": "cosine",
+        "index_options": {
+          "type": "int8_hnsw",
+          "m": 8,
+          "ef_construction": 64
+        }
+      }
+    }
+  }
+}

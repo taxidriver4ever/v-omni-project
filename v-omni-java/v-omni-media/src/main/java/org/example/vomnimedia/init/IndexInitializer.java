@@ -28,7 +28,10 @@ public class IndexInitializer {
                     .mappings(m -> m
                             // title
                             .properties("title", p -> p
-                                    .text(t -> t)
+                                    .text(t -> t
+                                            .analyzer("ik_max_word")      // 索引时：细粒度切分
+                                            .searchAnalyzer("ik_smart")    // 搜索时：粗粒度切分
+                                    )
                             )
                             // author
                             .properties("author", p -> p
@@ -39,11 +42,17 @@ public class IndexInitializer {
                             // embedding 向量字段
                             .properties("embedding", p -> p
                                     .denseVector(d -> d
-                                            .dims(2048)   // ⚠️ 根据你的模型改
+                                            .dims(1024)
                                             .index(true)
                                             .similarity("cosine")
+                                            .indexOptions(io -> io
+                                                    .type("int8_hnsw")
+                                                    .m(8)              // 每个节点的邻居数，默认 16，越大越准越慢
+                                                    .efConstruction(64) // 构建时的搜索深度，默认 100
+                                            )
                                     )
                             )
+
                     )
             );
         }

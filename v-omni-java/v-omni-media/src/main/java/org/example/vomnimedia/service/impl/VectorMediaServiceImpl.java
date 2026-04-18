@@ -23,11 +23,25 @@ public class VectorMediaServiceImpl implements VectorMediaService {
      */
     @Override
     public void upsert(DocumentVectorMediaPo doc) throws IOException {
-        client.index(i -> i
-                .index(INDEX)
-                .id(doc.getId())
-                .document(doc)
-        );
+
+        try {
+            client.index(i -> i
+                    .index(INDEX)
+                    .id(doc.getId())
+                    .document(doc)
+            );
+
+//            System.out.println("====== ES写入结果 ======");
+//            System.out.println("index = " + INDEX);
+//            System.out.println("id = " + response.id());
+//            System.out.println("result = " + response.result());
+//            System.out.println("=======================");
+
+        } catch (Exception e) {
+            System.out.println("====== ES写入失败 ======");
+            e.printStackTrace();
+            System.out.println("=======================");
+        }
     }
 
     /**
@@ -46,21 +60,6 @@ public class VectorMediaServiceImpl implements VectorMediaService {
         );
     }
 
-    /**
-     * ③ 兼容旧写法（不推荐直接用 PO update）
-     */
-    @Override
-    public void update(@NotNull DocumentVectorMediaPo doc) throws IOException {
-
-        Map<String, Object> map = new HashMap<>();
-
-        if (doc.getTitle() != null) map.put("title", doc.getTitle());
-        if (doc.getAuthor() != null) map.put("author", doc.getAuthor());
-        if (doc.getEmbedding() != null) map.put("embedding", doc.getEmbedding());
-        if (doc.getUrl() != null) map.put("url", doc.getUrl());
-
-        updateFields(doc.getId(), map);
-    }
 
 
 }

@@ -6,7 +6,6 @@
 
 # BlueJ files
 *.ctxt
-*.onnx
 
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/
@@ -35,6 +34,8 @@ redis-data/
 target/
 es-data/
 minio-data/
+tei-data/
+es-plugins/
 
 # IDE files
 .idea/

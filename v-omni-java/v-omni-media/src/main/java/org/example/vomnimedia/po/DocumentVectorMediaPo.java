@@ -16,8 +16,6 @@ public class DocumentVectorMediaPo {
     private String title;
 
     private String author;
-
-    private String url;
     /**
      * 向量字段
      */
