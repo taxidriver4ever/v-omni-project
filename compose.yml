@@ -37,156 +37,156 @@ services:
     networks:
       - v-omni-network
 
-  my-redis:
-    image: redis:7.0
-    container_name: my-redis
-    restart: always
-    ports:
-      - "6379:6379"
-    volumes:
-      - ./redis-data:/data
-    networks:
-      - v-omni-network
+#   my-redis:
+#     image: redis:7.0
+#     container_name: my-redis
+#     restart: always
+#     ports:
+#       - "6379:6379"
+#     volumes:
+#       - ./redis-data:/data
+#     networks:
+#       - v-omni-network
 
-  my-kafka:
-    image: apache/kafka:latest
-    container_name: my-kafka   # ✅ 统一名字（非常重要）
-    ports:
-      - "19092:19092"
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
+#   my-kafka:
+#     image: apache/kafka:latest
+#     container_name: my-kafka   # ✅ 统一名字（非常重要）
+#     ports:
+#       - "19092:19092"
+#     environment:
+#       KAFKA_NODE_ID: 1
+#       KAFKA_PROCESS_ROLES: broker,controller
 
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092,CONTROLLER://0.0.0.0:9093
+#       KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092,CONTROLLER://0.0.0.0:9093
 
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://my-kafka:9092,EXTERNAL://localhost:19092
+#       KAFKA_ADVERTISED_LISTENERS: INTERNAL://my-kafka:9092,EXTERNAL://localhost:19092
 
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@my-kafka:9093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-    networks:
-      - v-omni-network
+#       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@my-kafka:9093
+#       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+#       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+#       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+#       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+#     networks:
+#       - v-omni-network
 
-  my-minio:
-    image: minio/minio:latest
-    container_name: my-minio
-    restart: always
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password123
-      # 启用 Kafka 通知（PRIMARY 是自定义标识符，可任意取名）
-      MINIO_NOTIFY_KAFKA_ENABLE_PRIMARY: "on"
-      MINIO_NOTIFY_KAFKA_BROKERS_PRIMARY: "my-kafka:9092"
-      MINIO_NOTIFY_KAFKA_TOPIC_PRIMARY: "minio-url-topic"
-    volumes:
-      - ./minio-data:/data
-    command: server /data --console-address ":9001"
-    networks:
-      - v-omni-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+#   my-minio:
+#     image: minio/minio:latest
+#     container_name: my-minio
+#     restart: always
+#     ports:
+#       - "9000:9000"
+#       - "9001:9001"
+#     environment:
+#       MINIO_ROOT_USER: admin
+#       MINIO_ROOT_PASSWORD: password123
+#       # 启用 Kafka 通知（PRIMARY 是自定义标识符，可任意取名）
+#       MINIO_NOTIFY_KAFKA_ENABLE_PRIMARY: "on"
+#       MINIO_NOTIFY_KAFKA_BROKERS_PRIMARY: "my-kafka:9092"
+#       MINIO_NOTIFY_KAFKA_TOPIC_PRIMARY: "minio-url-topic"
+#     volumes:
+#       - ./minio-data:/data
+#     command: server /data --console-address ":9001"
+#     networks:
+#       - v-omni-network
+#     healthcheck:
+#       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+#       interval: 5s
+#       timeout: 5s
+#       retries: 5
 
-  minio-init:
-    image: minio/mc:latest
-    container_name: minio-init
-    depends_on:
-      my-minio:
-        condition: service_healthy
-    networks:
-      - v-omni-network
-    entrypoint: >
-      /bin/sh -c "
-      echo 'Waiting for MinIO to warm up Kafka connection...';
-      sleep 10;
-      mc alias set myminio http://my-minio:9000 admin password123;
-      mc mb --ignore-existing myminio/raws-video;
-      mc mb --ignore-existing myminio/tmp-extraction-image;
-      mc mb --ignore-existing myminio/final-video;
-      mc ilm rule add --expire-days 1 myminio/raws-video;
-      mc ilm rule add --expire-days 1 myminio/tmp-extraction-image;
-      # 尝试绑定，如果失败则等待 5 秒再试一次（增加鲁棒性）
-      mc event add myminio/raws-video arn:minio:sqs::PRIMARY:kafka --event put || 
-      (sleep 5 && mc event add myminio/raws-video arn:minio:sqs::PRIMARY:kafka --event put);
-      echo 'MinIO initialization completed';
-      exit 0;
-      "
+#   minio-init:
+#     image: minio/mc:latest
+#     container_name: minio-init
+#     depends_on:
+#       my-minio:
+#         condition: service_healthy
+#     networks:
+#       - v-omni-network
+#     entrypoint: >
+#       /bin/sh -c "
+#       echo 'Waiting for MinIO to warm up Kafka connection...';
+#       sleep 10;
+#       mc alias set myminio http://my-minio:9000 admin password123;
+#       mc mb --ignore-existing myminio/raws-video;
+#       mc mb --ignore-existing myminio/tmp-extraction-image;
+#       mc mb --ignore-existing myminio/final-video;
+#       mc ilm rule add --expire-days 1 myminio/raws-video;
+#       mc ilm rule add --expire-days 1 myminio/tmp-extraction-image;
+#       # 尝试绑定，如果失败则等待 5 秒再试一次（增加鲁棒性）
+#       mc event add myminio/raws-video arn:minio:sqs::PRIMARY:kafka --event put || 
+#       (sleep 5 && mc event add myminio/raws-video arn:minio:sqs::PRIMARY:kafka --event put);
+#       echo 'MinIO initialization completed';
+#       exit 0;
+#       "
 
-  my-elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
-    container_name: my-elasticsearch
-    restart: always
-    ports:
-      - "19200:9200"
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g
-    volumes:
-      - ./es-data:/usr/share/elasticsearch/data
-    networks:
-      - v-omni-network
+#   my-elasticsearch:
+#     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+#     container_name: my-elasticsearch
+#     restart: always
+#     ports:
+#       - "19200:9200"
+#     environment:
+#       - discovery.type=single-node
+#       - xpack.security.enabled=false
+#       - ES_JAVA_OPTS=-Xms1g -Xmx1g
+#     volumes:
+#       - ./es-data:/usr/share/elasticsearch/data
+#     networks:
+#       - v-omni-network
 
-# # 1. 进入容器
-# docker exec -it my-elasticsearch bash
+# # # 1. 进入容器
+# # docker exec -it my-elasticsearch bash
 
-# # 2. 安装插件（已安装过会提示已存在，可忽略）
-# ./bin/elasticsearch-plugin install --batch https://get.infini.cloud/elasticsearch/analysis-ik/8.12.2
+# # # 2. 安装插件（已安装过会提示已存在，可忽略）
+# # ./bin/elasticsearch-plugin install --batch https://get.infini.cloud/elasticsearch/analysis-ik/8.12.2
 
-# # 3. 退出容器
-# exit
+# # # 3. 退出容器
+# # exit
 
-# # 4. 重启容器使插件生效
-# docker restart my-elasticsearch
+# # # 4. 重启容器使插件生效
+# # docker restart my-elasticsearch
 
-  my-kibana:
-    image: docker.elastic.co/kibana/kibana:8.12.2
-    container_name: my-kibana
-    ports:
-      - "5601:5601"
-    environment:
-      - ELASTICSEARCH_HOSTS=http://my-elasticsearch:9200
-    depends_on:
-      - my-elasticsearch
-    networks:
-      - v-omni-network
+#   my-kibana:
+#     image: docker.elastic.co/kibana/kibana:8.12.2
+#     container_name: my-kibana
+#     ports:
+#       - "5601:5601"
+#     environment:
+#       - ELASTICSEARCH_HOSTS=http://my-elasticsearch:9200
+#     depends_on:
+#       - my-elasticsearch
+#     networks:
+#       - v-omni-network
   
-  my-tei:
-    # 1. 换成专门的 cuda 版本镜像
-    image: ghcr.io/huggingface/text-embeddings-inference:89-latest 
-    # 注意：如果你的显卡很新（30系/40系），建议用 turing-latest 或特定版本
-    container_name: my-tei
-    ports:
-      - "8080:80"
-    volumes:
-      - ./tei-data:/data
-    # 2. 移除之前的 --max-batch-tokens 限制（显卡能带更多）
-    command: 
-      - "--model-id"
-      - "BAAI/bge-large-zh-v1.5"
-      - "--port"
-      - "80"
-      - "--max-concurrent-requests"
-      - "128"  # 提高并发上限
-      - "--max-batch-requests"
-      - "32"   # 强制开启更大的批处理
-    networks:
-      - v-omni-network
-    # 3. 核心：给容器分配 GPU 权限
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+#   my-tei:
+#     # 1. 换成专门的 cuda 版本镜像
+#     image: ghcr.io/huggingface/text-embeddings-inference:89-latest 
+#     # 注意：如果你的显卡很新（30系/40系），建议用 turing-latest 或特定版本
+#     container_name: my-tei
+#     ports:
+#       - "8080:80"
+#     volumes:
+#       - ./tei-data:/data
+#     # 2. 移除之前的 --max-batch-tokens 限制（显卡能带更多）
+#     command: 
+#       - "--model-id"
+#       - "BAAI/bge-large-zh-v1.5"
+#       - "--port"
+#       - "80"
+#       - "--max-concurrent-requests"
+#       - "128"  # 提高并发上限
+#       - "--max-batch-requests"
+#       - "32"   # 强制开启更大的批处理
+#     networks:
+#       - v-omni-network
+#     # 3. 核心：给容器分配 GPU 权限
+#     deploy:
+#       resources:
+#         reservations:
+#           devices:
+#             - driver: nvidia
+#               count: 1
+#               capabilities: [gpu]
 
 
 networks:

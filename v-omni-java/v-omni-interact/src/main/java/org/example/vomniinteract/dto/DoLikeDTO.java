@@ -1,4 +1,4 @@
-package org.example.vomnimedia.dto;
+package org.example.vomniinteract.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -6,13 +6,13 @@ import lombok.Data;
 import java.io.Serial;
 import java.io.Serializable;
 
-@AllArgsConstructor
 @Data
-public class PreparePublishToMediaDto implements Serializable {
+@AllArgsConstructor
+public class DoLikeDTO implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
-    private String id;
+    private String action;
+    private String mediaId;
     private String userId;
-    private String title;
 }

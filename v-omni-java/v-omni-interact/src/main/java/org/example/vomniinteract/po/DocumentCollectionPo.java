@@ -9,7 +9,7 @@ import java.util.Date;
 
 @Builder
 @Data
-public class UserLikeDocumentPo {
+public class DocumentCollectionPo {
     private String id;
 
     @JsonProperty("user_id") // 映射到 ES 的 user_id
@@ -19,6 +19,8 @@ public class UserLikeDocumentPo {
     private String mediaId;
 
     private String title;
+
+    private String author;
 
     private Boolean deleted;
 

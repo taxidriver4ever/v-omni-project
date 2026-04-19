@@ -64,9 +64,9 @@ PUT /vomni_hot_suggest
 }
 
 
-DELETE /v_omni_user_like
+DELETE /v_omni_like
 
-PUT /v_omni_user_like
+PUT /v_omni_like
 {
   "settings": {
     "index": {
@@ -88,13 +88,94 @@ PUT /v_omni_user_like
         "type": "text", 
         "analyzer": "ik_max_word"
       },
-      
+      "author": { "type": "keyword" },
       -- 核心状态字段
       "deleted": { "type": "boolean" },
       "create_time": { "type": "date" }
     }
   }
 }
+
+
+# 删除旧索引（谨慎操作）
+DELETE /v_omni_collection
+
+# 创建收藏索引
+PUT /v_omni_collection
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1,
+      "refresh_interval": "1s"
+    }
+  },
+  "mappings": {
+    "dynamic": "strict", 
+    "properties": {
+      "id": { "type": "keyword" },           // userId_mediaId 拼接
+      "user_id": { "type": "keyword" },      // 统一使用关键字，方便聚合和精确匹配
+      "media_id": { "type": "keyword" },     // 统一使用关键字
+      
+      "title": {                             // 视频标题，支持全文搜索
+        "type": "text", 
+        "analyzer": "ik_max_word",
+        "fields": {
+          "keyword": { "type": "keyword" }   // 增加 sub-field，方便进行不分词的精确匹配
+        }
+      },
+      "author": { "type": "keyword" },       // 作者名
+      
+      "deleted": { "type": "boolean" },      // 逻辑删除标志
+      "create_time": { "type": "date" }      // 收藏时间
+    }
+  }
+}
+
+
+# 删除旧索引
+DELETE /v_omni_comment
+
+# 创建评论索引
+PUT /v_omni_comment
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1,
+      "refresh_interval": "1s"
+    }
+  },
+  "mappings": {
+    "dynamic": "strict", 
+    "properties": {
+      "id": { "type": "keyword" },           // 评论 ID (雪花 ID)
+      "user_id": { "type": "keyword" },      // 发布者 ID
+      "media_id": { "type": "keyword" },     // 所属视频 ID
+      
+      "content": {                           // 评论文本内容
+        "type": "text", 
+        "analyzer": "ik_max_word",           // 用于搜索和 AI 语义分析
+        "fields": {
+          "keyword": { "type": "keyword", "ignore_above": 256 } // 短评论精确匹配
+        }
+      },
+      
+      # --- 层级结构字段 ---
+      "parent_id": { "type": "keyword" },    // 父评论 ID (如果是根评论则为 "0")
+      "root_id": { "type": "keyword" },      // 根评论 ID (方便一次性查出整个讨论串)
+      
+      # --- 冗余统计字段 (用于排序和展示) ---
+      "like_count": { "type": "integer" },    // 点赞数
+      "reply_count": { "type": "integer" },   // 回复数
+      
+      "deleted": { "type": "boolean" },
+      "create_time": { "type": "date" }       // 评论时间，search_after 的核心字段
+    }
+  }
+}
+
+
 
 
 

@@ -68,14 +68,14 @@ CREATE TABLE `u_user_search_history` (
 DROP TABLE IF EXISTS `u_user_like`;
 CREATE TABLE `u_user_like` (
   `id` BIGINT NOT NULL COMMENT '雪花ID',
-  `user_id` BIGINT NOT NULL COMMENT '用户ID',
+  `like_user_id` BIGINT NOT NULL COMMENT '用户ID',
   `media_id` BIGINT NOT NULL COMMENT '视频ID',
   `deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '0-有效, 1-取消',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   -- 核心：业务幂等性索引
-  UNIQUE KEY `uk_user_media` (`user_id`, `media_id`),
+  UNIQUE KEY `uk_like_user_media` (`like_user_id`, `media_id`),
   -- 优化：支撑视频详情页获取点赞总数
   KEY `idx_media_count` (`media_id`, `deleted`),
   -- 优化：支撑 Agent 增量扫描用户近期“变心”行为
@@ -88,15 +88,15 @@ CREATE TABLE `u_user_like` (
 DROP TABLE IF EXISTS `u_user_collection`;
 CREATE TABLE `u_user_collection` (
   `id` BIGINT NOT NULL,
-  `user_id` BIGINT NOT NULL,
+  `collection_user_id` BIGINT NOT NULL,
   `media_id` BIGINT NOT NULL,
   `deleted` TINYINT(1) NOT NULL DEFAULT 0,
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_user_media` (`user_id`, `media_id`),
+  UNIQUE KEY `uk_user_media` (`collection_user_id`, `media_id`),
   -- 优化：支持查询个人收藏夹列表
-  KEY `idx_user_collect_list` (`user_id`, `deleted`, `update_time`)
+  KEY `idx_user_collect_list` (`collection_user_id`, `deleted`, `update_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户收藏记录表';
 
 -- -----------------------------------------------------------------------------
@@ -104,15 +104,24 @@ CREATE TABLE `u_user_collection` (
 -- -----------------------------------------------------------------------------
 DROP TABLE IF EXISTS `u_video_comment`;
 CREATE TABLE `u_video_comment` (
-  `id` BIGINT NOT NULL,
-  `media_id` BIGINT NOT NULL,
-  `user_id` BIGINT NOT NULL,
-  `content` VARCHAR(1000) NOT NULL,
-  `deleted` TINYINT(1) NOT NULL DEFAULT 0,
-  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `id` BIGINT NOT NULL COMMENT '评论唯一ID (雪花ID)',
+  `media_id` BIGINT NOT NULL COMMENT '所属媒体/视频ID',
+  
+  -- 新增字段：层级结构
+  `parent_user_id` BIGINT NOT NULL DEFAULT 0 COMMENT '父评论ID (一级评论为0)',
+  `root_user_id` BIGINT NOT NULL DEFAULT 0 COMMENT '根评论ID (讨论串起始ID)',
+  `reply_user_id` BIGINT DEFAULT NULL COMMENT '被回复者的用户ID',
+  
+  `content` VARCHAR(1000) NOT NULL COMMENT '评论内容',
+  `deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除 (0:正常, 1:删除)',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发布时间',
   PRIMARY KEY (`id`),
-  -- 核心优化：支撑视频下方评论列表的分页展示 (ICP优化)
-  KEY `idx_media_comment_pagination` (`media_id`, `deleted`, `create_time`),
-  -- 优化：方便 Agent 分析用户的评论语料进行画像
-  KEY `idx_user_comment_corpus` (`user_id`, `create_time`)
+
+  -- 核心优化 1：支撑视频下的一级评论分页 (过滤 parent_user_id = 0)
+  -- 复合索引顺序：media_id -> parent_user_id -> deleted -> create_time
+  KEY `idx_media_root_pagination` (`media_id`, `parent_user_id`, `deleted`, `create_time`),
+
+  -- 核心优化 2：支撑点击“查看更多回复” (根据 root_id 聚合)
+  KEY `idx_root_reply_pagination` (`root_user_id`, `deleted`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频评论表';
+

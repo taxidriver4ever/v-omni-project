@@ -1,6 +1,8 @@
 package org.example.vomniinteract.service;
 
 public interface InteractService {
-    Long doLike(Long mediaId,Long userId);
-    Long cancelLike(Long mediaId,Long userId);
+    Long doLike(String mediaId);
+    Long cancelLike(String mediaId);
+    Long doCollection(String mediaId);
+    Long cancelCollection(String mediaId);
 }
