@@ -29,6 +29,7 @@ public class MediaPo implements Serializable {
     private String title;
     private Long userId;
     private String state;
+    private int deleted;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 

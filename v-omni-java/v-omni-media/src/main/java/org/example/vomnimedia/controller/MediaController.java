@@ -5,7 +5,9 @@ import org.example.vomnimedia.common.MyResult;
 import org.example.vomnimedia.domain.statemachine.MediaState;
 import org.example.vomnimedia.service.MediaService;
 import org.example.vomnimedia.service.MinioService;
+import org.example.vomnimedia.service.VectorMediaService;
 import org.example.vomnimedia.util.SnowflakeIdWorker;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -37,6 +39,12 @@ public class MediaController {
                 return MyResult.error(500,"获取预签名失败");
             }
         }
+    }
+
+    @DeleteMapping("/media")
+    public MyResult<String> deleteMedia(String mediaId) throws Exception {
+        mediaService.deleteMedia(mediaId);
+        return MyResult.success();
     }
 
 }

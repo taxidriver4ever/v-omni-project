@@ -8,6 +8,7 @@ import org.example.vomnisearch.dto.SearchHistoryDTO;
 import org.example.vomnisearch.dto.UserContent;
 import org.example.vomnisearch.po.PrefixSearchPo;
 import org.example.vomnisearch.service.*;
+import org.example.vomnisearch.util.SecurityUtils;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -57,14 +58,9 @@ public class SearchController {
     }
 
     @GetMapping("/history")
-    public MyResult<List<String>> getHistory(HttpServletRequest request) {
+    public MyResult<List<String>> getHistory() {
         // 从拦截器解析出的 request 域中获取 userId
-        Long userId = (Long) request.getAttribute("current_user_id");
-
-        if (userId == null) {
-            return MyResult.success(Collections.emptyList());
-        }
-
+        Long userId = SecurityUtils.getCurrentUserId();
         List<String> history = searchService.getUserHistory(userId);
         return MyResult.success(history);
     }
@@ -74,7 +70,7 @@ public class SearchController {
      */
     @DeleteMapping("/remove")
     public MyResult<String> removeOne(@RequestParam String keyword) {
-        String userId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        String userId = String.valueOf(SecurityUtils.getCurrentUserId());
         searchService.removeHistory(userId, keyword);
         return MyResult.success();
     }
@@ -84,7 +80,7 @@ public class SearchController {
      */
     @DeleteMapping("/clear")
     public MyResult<String> clearAll() {
-        String userId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        String userId = String.valueOf(SecurityUtils.getCurrentUserId());
         searchService.clearAllHistory(userId);
         return MyResult.success();
     }

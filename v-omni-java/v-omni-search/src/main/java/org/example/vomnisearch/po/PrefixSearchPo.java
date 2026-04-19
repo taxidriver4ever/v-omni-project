@@ -17,4 +17,6 @@ public class PrefixSearchPo {
      * 热度分数（来自 Redis 算分）
      */
     private Double score;
+
+    private boolean deleted;
 }

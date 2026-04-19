@@ -16,6 +16,8 @@ public class DocumentVectorMediaPo {
     private String title;
 
     private String author;
+
+    private Boolean deleted;
     /**
      * 向量字段
      */

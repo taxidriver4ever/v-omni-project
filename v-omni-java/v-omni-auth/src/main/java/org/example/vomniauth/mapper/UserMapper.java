@@ -17,18 +17,18 @@ public interface UserMapper {
     int insertUser(UserPo user);
 
     // 2. 根据邮箱查 ID (这就是你之前担心的优化点)
-    @Select("SELECT id FROM u_user WHERE email = #{email}")
+    @Select("SELECT id AS id FROM u_user WHERE email = #{email}")
     Long findIdByEmail(@Param("email") String email);
 
-    @Select("SELECT email FROM u_user")
+    @Select("SELECT email AS email FROM u_user")
     List<String> findAllEmails();
 
-    @Select("SELECT username FROM u_user WHERE email = #{email}")
+    @Select("SELECT username AS username FROM u_user WHERE email = #{email}")
     String findUsernameByEmail(@Param("email") String email);
 
-    @Select("SELECT state FROM u_user WHERE id = #{id}")
+    @Select("SELECT state AS state FROM u_user WHERE id = #{id}")
     String findStateById(@Param("id") Long id);
 
-    @Select("SELECT id,state FROM u_user WHERE email = #{email}")
+    @Select("SELECT id AS id,state AS state FROM u_user WHERE email = #{email}")
     UserPo findIdStateByEmail(@Param("email") String email);
 }

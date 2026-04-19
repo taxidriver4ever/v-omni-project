@@ -16,4 +16,5 @@ public interface VectorMediaService {
                                              int size) throws IOException;
     List<String> analyzeText(String text) throws IOException;
     List<DocumentVectorMediaPo> textSearch(String queryText, String author, int size) throws IOException;
+    void deleteById(String id) throws IOException;
 }

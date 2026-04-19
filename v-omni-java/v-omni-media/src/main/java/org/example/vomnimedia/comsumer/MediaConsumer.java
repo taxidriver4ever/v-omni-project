@@ -6,10 +6,15 @@ import org.example.vomnimedia.domain.statemachine.MediaEvent;
 import org.example.vomnimedia.domain.statemachine.MediaEventContext;
 import org.example.vomnimedia.domain.statemachine.MediaState;
 import org.example.vomnimedia.domain.statemachine.MediaTransitionService;
+import org.example.vomnimedia.dto.PreparePublishToMediaDto;
+import org.example.vomnimedia.mapper.MediaMapper;
+import org.example.vomnimedia.po.MediaPo;
 import org.example.vomnimedia.service.FfmpegService;
 import org.example.vomnimedia.service.MinioService;
+import org.example.vomnimedia.service.VectorMediaService;
 import org.example.vomnimedia.util.MinioEventParser;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -50,6 +55,14 @@ public class MediaConsumer {
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private MediaMapper mediaMapper;
+
+    @Resource
+    private VectorMediaService vectorMediaService;
+
+    private static final String MEDIA_INFO_PREFIX = "media:info:";
 
     @KafkaListener(topics = "minio-url-topic", groupId = "v-omni-media-group")
     public void getUrlTopicConsume(@NotNull String message) {
@@ -106,6 +119,31 @@ public class MediaConsumer {
         MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id));
         mediaTransitionService.sendEvent(mediaEventContext, MediaEvent.FINISH_DECODING);
     }
+
+    @KafkaListener(topics = "delete-media-topic", groupId = "v-omni-media-group")
+    public void deleteMediaTopicConsume(@NotNull String message) throws Exception {
+        String[] parts = message.split(":");
+        String id = parts[0];
+        String userId = parts[1];
+        Long l = mediaMapper.selectUserIdById(Long.parseLong(id));
+        if(!l.toString().equals(userId)) return;
+        vectorMediaService.deleteById(id);
+        mediaMapper.updateIsDeletedById(Long.parseLong(id));
+    }
+
+    @KafkaListener(topics = "pre-database-topic", groupId = "v-omni-media-group")
+    public void preDatabaseTopicConsume(@NotNull PreparePublishToMediaDto message) throws Exception {
+        String id = message.getId();
+        String userId = message.getUserId();
+        String title = message.getTitle();
+        MediaPo mediaPo = new MediaPo(Long.parseLong(id),Long.parseLong(userId),MediaState.PREPARE_PUBLISH_MEDIA, title);
+        mediaMapper.insertUser(mediaPo);
+        String author = mediaMapper.selectAuthorById(Long.parseLong(id));
+        String mediaInfoKey = MEDIA_INFO_PREFIX + id;
+        stringRedisTemplate.opsForHash().put(mediaInfoKey, "author" ,author);
+        stringRedisTemplate.opsForHash().put(mediaInfoKey, "title" ,title);
+    }
+
 
     @NotNull
     private float[] callPythonEmbeddingService(String videoId, List<String> frameObjects) {

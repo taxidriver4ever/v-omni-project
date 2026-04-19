@@ -11,6 +11,8 @@ import org.example.vomnimedia.service.IdentityService;
 import org.example.vomnimedia.service.MediaService;
 import org.example.vomnimedia.service.MinioService;
 import org.example.vomnimedia.util.SecurityUtils;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -31,6 +33,9 @@ public class MediaServiceImpl implements MediaService {
     @Resource
     private MediaTransitionService mediaTransitionService;
 
+    @Resource
+    private KafkaTemplate<String,String> kafkaTemplate;
+
     @Override
     public Map<String,String> generatePreSignature(String title) {
         Map<String, String> map = new HashMap<>();
@@ -49,6 +54,12 @@ public class MediaServiceImpl implements MediaService {
         map.put("preSign", preSign);
 
         return map;
+    }
+
+    @Override
+    public void deleteMedia(String mediaId) {
+        String userId = String.valueOf(SecurityUtils.getCurrentUserId());
+        kafkaTemplate.send("delete-media-topic", mediaId + ":" + userId);
     }
 
 }

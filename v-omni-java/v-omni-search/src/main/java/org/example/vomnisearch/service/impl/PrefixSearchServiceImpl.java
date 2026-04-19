@@ -2,15 +2,13 @@ package org.example.vomnisearch.service.impl;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
-import co.elastic.clients.elasticsearch.core.SearchRequest;
+import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.elasticsearch.client.RequestOptions;
 import org.example.vomnisearch.po.PrefixSearchPo;
 import org.example.vomnisearch.service.PrefixSearchService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -25,7 +23,7 @@ import java.util.stream.Collectors;
 public class PrefixSearchServiceImpl implements PrefixSearchService {
 
     @Resource
-    private ElasticsearchClient esClient; // 新版 Java API Client
+    private ElasticsearchClient esClient;
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -33,29 +31,29 @@ public class PrefixSearchServiceImpl implements PrefixSearchService {
     private static final String INDEX_NAME = "vomni_hot_suggest";
     private static final String HOT_WORDS_KEY = "hot_words:global";
 
+    // 字段名常量，必须与 Mapping 一致
+    private static final String FIELD_WORD = "word";
+    private static final String FIELD_SCORE = "score";
+    private static final String FIELD_DELETED = "deleted";
+
     /**
-     * 前缀联想查询 - 使用新版 ES Client
+     * 前缀联想查询
+     * 核心改进：增加了 deleted 过滤，防止违规词被联想出来
      */
     @Override
     public List<PrefixSearchPo> getSuggestions(String prefix) throws IOException {
         try {
-            // 使用 Lambda 风格构建查询，非常硬核
             SearchResponse<PrefixSearchPo> response = esClient.search(s -> s
                             .index(INDEX_NAME)
-                            .query(q -> q
-                                    .match(m -> m
-                                            .field("word")
-                                            .query(prefix)
-                                    )
-                            )
-                            .sort(so -> so
-                                    .field(f -> f
-                                            .field("score")
-                                            .order(SortOrder.Desc)
-                                    )
-                            )
+                            .query(q -> q.bool(b -> b
+                                    // 1. 文本匹配
+                                    .must(m -> m.match(ma -> ma.field(FIELD_WORD).query(prefix)))
+                                    // 2. 逻辑删除过滤（死门）
+                                    .filter(f -> f.term(t -> t.field(FIELD_DELETED).value(false)))
+                            ))
+                            .sort(so -> so.field(f -> f.field(FIELD_SCORE).order(SortOrder.Desc)))
                             .size(10),
-                    PrefixSearchPo.class // 直接反序列化为 PO 对象
+                    PrefixSearchPo.class
             );
 
             return response.hits().hits().stream()
@@ -71,32 +69,43 @@ public class PrefixSearchServiceImpl implements PrefixSearchService {
 
     /**
      * 定时同步：Redis ZSet -> ES 索引
-     * 每 5 分钟同步一次 Top 1000
+     * 核心改进：由单个同步改为 Bulk 批量同步，提升吞吐量
      */
     @Scheduled(cron = "0 0/5 * * * ?")
-    private void syncRedisToEs() {
+    public void syncRedisToEs() {
         Set<ZSetOperations.TypedTuple<String>> topWords =
                 stringRedisTemplate.opsForZSet().reverseRangeWithScores(HOT_WORDS_KEY, 0, 1000);
 
         if (topWords == null || topWords.isEmpty()) return;
 
-        topWords.forEach(tuple -> {
-            String word = tuple.getValue();
-            Double score = tuple.getScore();
+        try {
+            BulkRequest.Builder br = new BulkRequest.Builder();
 
-            PrefixSearchPo po = new PrefixSearchPo(word, score);
+            for (ZSetOperations.TypedTuple<String> tuple : topWords) {
+                String word = tuple.getValue();
+                Double score = tuple.getScore();
+                if (word == null) continue;
 
-            try {
-                // 使用 Fluent API 进行 Index 操作
-                esClient.index(i -> i
-                        .index(INDEX_NAME)
-                        .id(word) // 以词作为 ID 实现幂等 Upsert
-                        .document(po)
+                PrefixSearchPo po = new PrefixSearchPo(word, score, false);
+                // 确保同步进来的词默认是未删除的
+                po.setDeleted(false);
+
+                // 将每个词的索引操作加入 Bulk 队列
+                br.operations(op -> op
+                        .index(idx -> idx
+                                .index(INDEX_NAME)
+                                .id(word) // 以词为 ID 实现幂等
+                                .document(po)
+                        )
                 );
-            } catch (IOException e) {
-                log.error("同步热词 [{}] 到 ES 失败: {}", word, e.getMessage());
             }
-        });
-        log.info("成功同步 {} 条热词数据至 ES", topWords.size());
+
+            // 一次网络往返完成 1000 条数据写入
+            esClient.bulk(br.build());
+            log.info("成功批量同步 {} 条热词数据至 ES", topWords.size());
+
+        } catch (IOException e) {
+            log.error("同步热词到 ES 失败: {}", e.getMessage());
+        }
     }
 }

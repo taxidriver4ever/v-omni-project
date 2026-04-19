@@ -33,7 +33,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // 请求授权
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/search/**").permitAll()
+                        .requestMatchers("/search/hybrid/video","/search/prefix/hot-word").permitAll()
                         .anyRequest().authenticated()
                 )
                 // 添加你的 JWT 过滤器

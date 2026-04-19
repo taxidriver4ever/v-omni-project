@@ -2,6 +2,7 @@ package org.example.vomnimedia.domain.statemachine;
 
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.example.vomnimedia.dto.PreparePublishToMediaDto;
 import org.example.vomnimedia.mapper.MediaMapper;
 import org.example.vomnimedia.po.DocumentVectorMediaPo;
 import org.example.vomnimedia.po.MediaPo;
@@ -13,6 +14,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -42,14 +44,18 @@ public class MediaAction {
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private KafkaTemplate<String,PreparePublishToMediaDto> kafkaTemplate;
+
+
     public void initialOnGetPreSignatureToPreparePublishMedia(@NotNull MediaEventContext mediaEventContext) {
         try {
             Long id = mediaEventContext.getId();
             String userId = mediaEventContext.getString("userId");
             String title = mediaEventContext.getString("title");
             String rawsVideoUploadUrl = minioService.getRawsVideoUploadUrl(id.toString());
-            MediaPo mediaPo = new MediaPo(id,Long.parseLong(userId),MediaState.PREPARE_PUBLISH_MEDIA, title);
-            mediaMapper.insertUser(mediaPo);
+            PreparePublishToMediaDto preparePublishToMediaDto = new PreparePublishToMediaDto(id.toString(), userId, title);
+            kafkaTemplate.send("pre-database-topic", preparePublishToMediaDto);
             mediaEventContext.with("preSign", rawsVideoUploadUrl);
         } catch (Exception e) {
             throw new RuntimeException(e);
