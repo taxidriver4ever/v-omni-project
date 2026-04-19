@@ -11,6 +11,8 @@ import org.example.vomnisearch.service.VectorMediaService;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -34,11 +36,51 @@ class VOmniSearchApplicationTests {
     private static final int VECTOR_DIM = 1024;
     private static final int BATCH_SIZE = 5000; // 每批5000条
 
-    @Resource
-    private EmbeddingService embeddingService;
-
     @Test
     void contextLoads() throws IOException, InterruptedException {
+    }
+
+//    public void testTps() throws InterruptedException {
+//        int totalRequests = 1000; // 总请求数
+//        int threadCount = 50;     // 并发线程数
+//        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+//        CountDownLatch latch = new CountDownLatch(totalRequests);
+//        LongAdder successCount = new LongAdder();
+//
+//        System.out.println("🚀 压测开始，正在冲击 4060 显卡...");
+//        long startTime = System.currentTimeMillis();
+//
+//        for (int i = 0; i < totalRequests; i++) {
+//            executor.submit(() -> {
+//                try {
+//                    // 调用你的 service，注意压测时可以暂时关掉缓存
+//                    embeddingService.getVector("这是测试文本，看看 4060 能跑多快");
+//                    successCount.increment();
+//                } catch (Exception e) {
+//                    System.err.println("请求失败: " + e.getMessage());
+//                } finally {
+//                    latch.countDown();
+//                }
+//            });
+//        }
+//
+//        latch.await(); // 等待所有任务完成
+//        long endTime = System.currentTimeMillis();
+//        executor.shutdown();
+//
+//        // --- 计算数据 ---
+//        double totalTimeSeconds = (endTime - startTime) / 1000.0;
+//        double tps = successCount.sum() / totalTimeSeconds;
+//
+//        System.out.println("--------------------------------------");
+//        System.out.println("✅ 压测完成！");
+//        System.out.println("📊 总耗时: " + totalTimeSeconds + " 秒");
+//        System.out.println("📈 最终 TPS: " + String.format("%.2f", tps));
+//        System.out.println("--------------------------------------");
+//    }
+
+
+    private void writeToEs() throws IOException {
         Random random = new Random();
         String[] authorPrefix = {
                 // 创作类（30+）
@@ -97,48 +139,7 @@ class VOmniSearchApplicationTests {
             System.out.println("已插入 " + (batch + 1) * BATCH_SIZE + " 条");
         }
         System.out.println("插入完成，共 " + 100000 + " 条");
-//        testTps();
     }
-
-//    public void testTps() throws InterruptedException {
-//        int totalRequests = 1000; // 总请求数
-//        int threadCount = 50;     // 并发线程数
-//        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
-//        CountDownLatch latch = new CountDownLatch(totalRequests);
-//        LongAdder successCount = new LongAdder();
-//
-//        System.out.println("🚀 压测开始，正在冲击 4060 显卡...");
-//        long startTime = System.currentTimeMillis();
-//
-//        for (int i = 0; i < totalRequests; i++) {
-//            executor.submit(() -> {
-//                try {
-//                    // 调用你的 service，注意压测时可以暂时关掉缓存
-//                    embeddingService.getVector("这是测试文本，看看 4060 能跑多快");
-//                    successCount.increment();
-//                } catch (Exception e) {
-//                    System.err.println("请求失败: " + e.getMessage());
-//                } finally {
-//                    latch.countDown();
-//                }
-//            });
-//        }
-
-//        latch.await(); // 等待所有任务完成
-//        long endTime = System.currentTimeMillis();
-//        executor.shutdown();
-//
-//        // --- 计算数据 ---
-//        double totalTimeSeconds = (endTime - startTime) / 1000.0;
-//        double tps = successCount.sum() / totalTimeSeconds;
-//
-//        System.out.println("--------------------------------------");
-//        System.out.println("✅ 压测完成！");
-//        System.out.println("📊 总耗时: " + totalTimeSeconds + " 秒");
-//        System.out.println("📈 最终 TPS: " + String.format("%.2f", tps));
-//        System.out.println("--------------------------------------");
-//    }
-
 
     // 领域/话题词 (80+ 个)
     String[] fields = {

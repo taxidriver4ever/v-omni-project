@@ -36,3 +36,16 @@ CREATE TABLE `u_media` (
   CONSTRAINT `fk_media_user` FOREIGN KEY (`user_id`) REFERENCES `u_user` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频信息表';
 
+
+CREATE TABLE `u_user_search_history` (
+  `id` bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `keyword` varchar(100) NOT NULL COMMENT '搜索内容',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'CT',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'UT',
+  -- 唯一索引：保证同一个用户搜同一个词只占一行，方便做 Upsert
+  UNIQUE KEY `uk_user_keyword` (`user_id`, `keyword`),
+  -- 检索索引：方便查询该用户最近搜索记录
+  KEY `idx_user_ut` (`user_id`, `update_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+

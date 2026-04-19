@@ -8,6 +8,9 @@ import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.SourceConfig;
+import co.elastic.clients.elasticsearch.indices.AnalyzeRequest;
+import co.elastic.clients.elasticsearch.indices.AnalyzeResponse;
+import co.elastic.clients.elasticsearch.indices.analyze.AnalyzeToken;
 import co.elastic.clients.json.JsonData;
 import lombok.RequiredArgsConstructor;
 import org.example.vomnisearch.po.DocumentVectorMediaPo;
@@ -158,6 +161,24 @@ public class VectorMediaServiceImpl implements VectorMediaService {
                 .map(Hit::source)
                 .collect(Collectors.toList());
     }
+
+    @Override
+    public List<String> analyzeText(String text) throws IOException {
+        // 构造请求，指定使用 ik_smart (粗粒度) 或 ik_max_word (细粒度)
+        AnalyzeRequest request = AnalyzeRequest.of(a -> a
+                .index(INDEX) // 可选，如果指定了索引，会使用该索引定义的词典
+                .analyzer("ik_smart")
+                .text(text)
+        );
+
+        AnalyzeResponse response = client.indices().analyze(request);
+
+        // 提取分词结果
+        return response.tokens().stream()
+                .map(AnalyzeToken::token)
+                .toList();
+    }
+
 
     /**
      * 构建各评分函数列表

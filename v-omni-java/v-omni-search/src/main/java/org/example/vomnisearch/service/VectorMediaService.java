@@ -14,5 +14,6 @@ public interface VectorMediaService {
                                              float[] queryVector,
                                              String author,
                                              int size) throws IOException;
+    List<String> analyzeText(String text) throws IOException;
     List<DocumentVectorMediaPo> textSearch(String queryText, String author, int size) throws IOException;
 }

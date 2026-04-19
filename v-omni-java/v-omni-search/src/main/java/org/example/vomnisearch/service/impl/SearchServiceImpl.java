@@ -7,16 +7,21 @@ import org.example.vomnisearch.service.EmbeddingService;
 import org.example.vomnisearch.service.MinioService;
 import org.example.vomnisearch.service.SearchService;
 import org.example.vomnisearch.service.VectorMediaService;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @Service
 public class SearchServiceImpl implements SearchService {
+
+    private final static String HOT_WORD_TOPIC = "hot-word-topic";
 
     @Resource
     private VectorMediaService vectorMediaService;
@@ -30,9 +35,15 @@ public class SearchServiceImpl implements SearchService {
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private KafkaTemplate<String, String> kafkaTemplate;
+
+    private static final String HISTORY_PREFIX = "search:keyword:user_id:";
+
+
     @Override
-    public List<String> searchVideo(UserContent userContent) throws Exception {
-        String content = userContent.getContent();
+    public List<String> searchVideo(@NotNull String content) throws Exception {
+        kafkaTemplate.send(HOT_WORD_TOPIC,content);
         float[][] vector = embeddingService.getVector(content);
         if (vector == null || vector.length == 0) {
             return Collections.emptyList();
@@ -52,5 +63,21 @@ public class SearchServiceImpl implements SearchService {
             results.add(s);
         }
         return results;
+    }
+
+    @Override
+    public List<String> getUserHistory(Long userId) {
+        String redisKey = HISTORY_PREFIX + userId;
+
+        // reverseRange(key, start, end) 是闭区间
+        // 0 到 9 代表取按分数从大到小排的前 10 个元素
+        Set<String> historySet = stringRedisTemplate.opsForZSet().reverseRange(redisKey, 0, 9);
+
+        if (historySet == null || historySet.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 转为 List 返回给前端，保持顺序
+        return new ArrayList<>(historySet);
     }
 }

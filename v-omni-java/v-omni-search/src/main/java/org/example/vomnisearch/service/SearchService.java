@@ -6,5 +6,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import java.util.List;
 
 public interface SearchService {
-    List<String> searchVideo(UserContent userContent) throws Exception;
+    List<String> searchVideo(String content) throws Exception;
+    /**
+     * 获取用户最近的搜索词
+     * @param userId 用户ID
+     * @return 搜索词列表
+     */
+    List<String> getUserHistory(Long userId);
 }
