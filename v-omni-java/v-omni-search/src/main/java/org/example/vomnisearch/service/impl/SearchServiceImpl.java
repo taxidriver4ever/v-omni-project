@@ -80,4 +80,16 @@ public class SearchServiceImpl implements SearchService {
         // 转为 List 返回给前端，保持顺序
         return new ArrayList<>(historySet);
     }
+
+    @Override
+    public void removeHistory(String userId, String keyword) {
+        // 仅删除 Redis 视图，用户搜不到这行历史，但 MySQL 数据依旧存在用于画像
+        stringRedisTemplate.opsForZSet().remove(HISTORY_PREFIX + userId, keyword);
+    }
+
+    @Override
+    public void clearAllHistory(String userId) {
+        // 直接删除整个 ZSet
+        stringRedisTemplate.delete(HISTORY_PREFIX + userId);
+    }
 }

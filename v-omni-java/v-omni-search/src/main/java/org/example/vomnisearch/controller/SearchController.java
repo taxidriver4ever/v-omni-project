@@ -9,6 +9,8 @@ import org.example.vomnisearch.dto.UserContent;
 import org.example.vomnisearch.po.PrefixSearchPo;
 import org.example.vomnisearch.service.*;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Collections;
@@ -67,5 +69,24 @@ public class SearchController {
         return MyResult.success(history);
     }
 
+    /**
+     * 删除单条历史记录
+     */
+    @DeleteMapping("/remove")
+    public MyResult<String> removeOne(@RequestParam String keyword) {
+        String userId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        searchService.removeHistory(userId, keyword);
+        return MyResult.success();
+    }
+
+    /**
+     * 清空当前用户所有历史记录
+     */
+    @DeleteMapping("/clear")
+    public MyResult<String> clearAll() {
+        String userId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        searchService.clearAllHistory(userId);
+        return MyResult.success();
+    }
 
 }

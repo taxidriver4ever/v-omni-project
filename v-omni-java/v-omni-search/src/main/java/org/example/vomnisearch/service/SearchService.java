@@ -13,4 +13,6 @@ public interface SearchService {
      * @return 搜索词列表
      */
     List<String> getUserHistory(Long userId);
+    void removeHistory(String userId, String keyword);
+    void clearAllHistory(String userId);
 }
