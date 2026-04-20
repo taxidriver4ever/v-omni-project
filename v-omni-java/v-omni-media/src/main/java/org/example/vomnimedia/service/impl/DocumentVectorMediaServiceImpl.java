@@ -4,7 +4,7 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomnimedia.po.DocumentVectorMediaPo;
-import org.example.vomnimedia.service.VectorMediaService;
+import org.example.vomnimedia.service.DocumentVectorMediaService;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -14,7 +14,7 @@ import java.util.Map;
 @Slf4j
 @RequiredArgsConstructor
 @Service
-public class VectorMediaServiceImpl implements VectorMediaService {
+public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaService {
 
     private final ElasticsearchClient client;
 
@@ -70,7 +70,6 @@ public class VectorMediaServiceImpl implements VectorMediaService {
     @Override
     public void deleteById(String id) throws IOException {
         try {
-            // 修正：Key 从 "is_deleted" 改为 "deleted"
             Map<String, Object> deleteMap = Collections.singletonMap("deleted", true);
 
             client.update(u -> u

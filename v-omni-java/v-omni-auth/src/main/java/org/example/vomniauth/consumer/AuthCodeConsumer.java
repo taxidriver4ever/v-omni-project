@@ -15,7 +15,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
+import java.util.Date;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
@@ -149,6 +149,8 @@ public class AuthCodeConsumer {
         String email = idAndEmail.split(":")[1];
         String username = UsernameGenerator.generateRandomName();
         UserPo user = new UserPo(id,username,email,AuthState.REGISTERED);
+        user.setCreateTime(new Date());
+        user.setUpdateTime(new Date());
 
         int i = userMapper.insertUser(user);
         if(i == 0)

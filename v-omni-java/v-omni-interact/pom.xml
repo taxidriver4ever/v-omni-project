@@ -81,6 +81,18 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson-spring-boot-starter</artifactId>
+            <version>3.23.0</version> <!-- 请使用最新稳定版 -->
+            <exclusions>
+                <!-- 排除 Redisson Starter 自带的连接池实现，避免冲突 -->
+                <exclusion>
+                    <groupId>org.redisson</groupId>
+                    <artifactId>redisson-spring-data-33</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
 
         <dependency>
             <groupId>com.mysql</groupId>

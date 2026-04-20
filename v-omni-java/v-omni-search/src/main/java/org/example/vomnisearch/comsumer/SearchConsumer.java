@@ -7,7 +7,7 @@ import org.example.vomnisearch.dto.SearchHistoryDTO;
 import org.example.vomnisearch.mapper.UserSearchHistoryMapper;
 import org.example.vomnisearch.po.UserSearchHistoryPo;
 import org.example.vomnisearch.service.StopWordService;
-import org.example.vomnisearch.service.VectorMediaService;
+import org.example.vomnisearch.service.DocumentVectorMediaService;
 import org.example.vomnisearch.util.SnowflakeIdWorker;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -16,8 +16,8 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit;
 public class SearchConsumer {
 
     @Resource
-    private VectorMediaService vectorMediaService;
+    private DocumentVectorMediaService documentVectorMediaService;
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -74,7 +74,7 @@ public class SearchConsumer {
         // 4. 处理切词逻辑（仅针对中长句）
         if (cleanInput.length() > 6 && cleanInput.length() <= 20) {
             try {
-                List<String> tokens = vectorMediaService.analyzeText(cleanInput);
+                List<String> tokens = documentVectorMediaService.analyzeText(cleanInput);
                 for (String token : tokens) {
                     // 过滤：单字、垃圾词、以及与原词重复的情况
                     if (token.length() > 1
@@ -114,6 +114,8 @@ public class SearchConsumer {
         // 3. MySQL 正常记录，不参与窗口逻辑
         Long id = snowflakeIdWorker.nextId();
         UserSearchHistoryPo po = new UserSearchHistoryPo(id, userId, keyword);
+        po.setCreateTime(new Date());
+        po.setUpdateTime(new Date());
         userSearchHistoryMapper.addUserSearchHistoryIfAbsentUpdateTime(po);
 
         // 4. 防止冷用户占用内存，设置 Key 整体过期时间（如 30 天）

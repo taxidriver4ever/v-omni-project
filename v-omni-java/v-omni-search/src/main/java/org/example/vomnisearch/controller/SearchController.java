@@ -2,19 +2,15 @@ package org.example.vomnisearch.controller;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
-import org.checkerframework.checker.units.qual.K;
 import org.example.vomnisearch.common.MyResult;
 import org.example.vomnisearch.dto.SearchHistoryDTO;
 import org.example.vomnisearch.dto.UserContent;
-import org.example.vomnisearch.po.PrefixSearchPo;
+import org.example.vomnisearch.po.DocumentHotWordsPo;
 import org.example.vomnisearch.service.*;
 import org.example.vomnisearch.util.SecurityUtils;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collections;
 import java.util.List;
 
 @CrossOrigin(maxAge = 3600)
@@ -28,7 +24,7 @@ public class SearchController {
     private SearchService searchService;
 
     @Resource
-    private PrefixSearchService prefixSearchService;
+    private DocumentHotWordsService documentHotWordsService;
 
     @Resource
     private KafkaTemplate<String, SearchHistoryDTO> kafkaTemplate;
@@ -49,10 +45,10 @@ public class SearchController {
     }
 
     @PostMapping("/prefix/hot-word")
-    public MyResult<List<PrefixSearchPo>> searchHotWord(@RequestBody UserContent userContent) throws Exception {
+    public MyResult<List<DocumentHotWordsPo>> searchHotWord(@RequestBody UserContent userContent) throws Exception {
         String content = userContent.getContent();
         if(content == null || content.isEmpty()) return MyResult.error(403,"没法查");
-        List<PrefixSearchPo> suggestions = prefixSearchService.getSuggestions(content);
+        List<DocumentHotWordsPo> suggestions = documentHotWordsService.getSuggestions(content);
         if(suggestions == null || suggestions.isEmpty()) return MyResult.error(404,"没有搜索到");
         return MyResult.success(suggestions);
     }

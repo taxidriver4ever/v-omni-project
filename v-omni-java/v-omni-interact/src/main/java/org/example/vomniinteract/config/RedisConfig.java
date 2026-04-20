@@ -49,9 +49,9 @@ public class RedisConfig {
      * Lua 脚本注入区域
      * --------------------------------------------------------- */
     @Bean
-    public DefaultRedisScript<Long> doOrCancelLikeScript() {
+    public DefaultRedisScript<Long> doOrCancelScript() {
         DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
-        redisScript.setLocation(new ClassPathResource("lua/do_or_cancel_like.lua"));
+        redisScript.setLocation(new ClassPathResource("lua/do_or_cancel_like_or_collection.lua"));
         redisScript.setResultType(Long.class);
         return redisScript;
     }

@@ -1,4 +1,4 @@
-package org.example.vomnimedia.po;
+package org.example.vomnisearch.po;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;
@@ -6,24 +6,22 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.Date;
-import java.util.List;
 
 @Data
-@NoArgsConstructor
 @AllArgsConstructor
-public class DocumentVectorMediaPo {
-
-    private String id;
-
-    private String title;
-
-    private String author;
-
-    private Boolean deleted;
+@NoArgsConstructor
+public class DocumentHotWordsPo {
     /**
-     * 向量字段
+     * 热词内容
      */
-    private List<Float> embedding;
+    private String word;
+
+    /**
+     * 热度分数（来自 Redis 算分）
+     */
+    private Double score;
+
+    private boolean deleted;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
     private Date createTime;

@@ -1,12 +1,10 @@
 package org.example.vomnisearch.service.impl;
 
 import jakarta.annotation.Resource;
-import org.example.vomnisearch.common.MyResult;
-import org.example.vomnisearch.dto.UserContent;
 import org.example.vomnisearch.service.EmbeddingService;
 import org.example.vomnisearch.service.MinioService;
 import org.example.vomnisearch.service.SearchService;
-import org.example.vomnisearch.service.VectorMediaService;
+import org.example.vomnisearch.service.DocumentVectorMediaService;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -24,7 +22,7 @@ public class SearchServiceImpl implements SearchService {
     private final static String HOT_WORD_TOPIC = "hot-word-topic";
 
     @Resource
-    private VectorMediaService vectorMediaService;
+    private DocumentVectorMediaService documentVectorMediaService;
 
     @Resource
     private EmbeddingService embeddingService;
@@ -48,7 +46,7 @@ public class SearchServiceImpl implements SearchService {
         if (vector == null || vector.length == 0) {
             return Collections.emptyList();
         }
-        List<String> strings = vectorMediaService.hybridSearchIds(content, vector[0], content, 10);
+        List<String> strings = documentVectorMediaService.hybridSearchIds(content, vector[0], content, 10);
         if(strings == null || strings.isEmpty()) return List.of();
         List<String> results = new ArrayList<>();
         for (String string : strings) {

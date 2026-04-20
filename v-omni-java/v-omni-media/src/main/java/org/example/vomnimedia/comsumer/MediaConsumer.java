@@ -11,10 +11,9 @@ import org.example.vomnimedia.mapper.MediaMapper;
 import org.example.vomnimedia.po.MediaPo;
 import org.example.vomnimedia.service.FfmpegService;
 import org.example.vomnimedia.service.MinioService;
-import org.example.vomnimedia.service.VectorMediaService;
+import org.example.vomnimedia.service.DocumentVectorMediaService;
 import org.example.vomnimedia.util.MinioEventParser;
 import org.jetbrains.annotations.NotNull;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -28,6 +27,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -60,7 +60,7 @@ public class MediaConsumer {
     private MediaMapper mediaMapper;
 
     @Resource
-    private VectorMediaService vectorMediaService;
+    private DocumentVectorMediaService documentVectorMediaService;
 
     private static final String MEDIA_INFO_PREFIX = "media:info:";
 
@@ -127,8 +127,8 @@ public class MediaConsumer {
         String userId = parts[1];
         Long l = mediaMapper.selectUserIdById(Long.parseLong(id));
         if(!l.toString().equals(userId)) return;
-        vectorMediaService.deleteById(id);
-        mediaMapper.updateIsDeletedById(Long.parseLong(id));
+        documentVectorMediaService.deleteById(id);
+        mediaMapper.updateIsDeletedById(Long.parseLong(id), new Date());
     }
 
     @KafkaListener(topics = "pre-database-topic", groupId = "v-omni-media-group")
@@ -137,6 +137,8 @@ public class MediaConsumer {
         String userId = message.getUserId();
         String title = message.getTitle();
         MediaPo mediaPo = new MediaPo(Long.parseLong(id),Long.parseLong(userId),MediaState.PREPARE_PUBLISH_MEDIA, title);
+        mediaPo.setCreateTime(new Date());
+        mediaPo.setUpdateTime(new Date());
         mediaMapper.insertUser(mediaPo);
         String author = mediaMapper.selectAuthorById(Long.parseLong(id));
         String mediaInfoKey = MEDIA_INFO_PREFIX + id;

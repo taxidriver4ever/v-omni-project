@@ -1,5 +1,6 @@
 package org.example.vomnimedia.po;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -9,6 +10,7 @@ import org.jetbrains.annotations.NotNull;
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.Date;
 
 /**
  * User 持久化对象
@@ -30,8 +32,12 @@ public class MediaPo implements Serializable {
     private Long userId;
     private String state;
     private int deleted;
-    private LocalDateTime createTime;
-    private LocalDateTime updateTime;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
+    private Date createTime;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
+    private Date updateTime;
 
     public MediaPo(Long id, Long userId, @NotNull MediaState mediaState, String title) {
         this.id = id;

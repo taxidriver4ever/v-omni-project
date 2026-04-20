@@ -1,5 +1,6 @@
 package org.example.vomniauth.po;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
 import java.io.Serial;
@@ -11,6 +12,7 @@ import lombok.NoArgsConstructor;
 import org.example.vomniauth.domain.statemachine.AuthState;
 
 import java.time.LocalDateTime;
+import java.util.Date;
 
 /**
  * User 持久化对象
@@ -31,8 +33,11 @@ public class UserPo implements Serializable {
     private String username;
     private String email;
     private String state;
-    private LocalDateTime createTime;
-    private LocalDateTime updateTime;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
+    private Date createTime;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
+    private Date updateTime;
 
     public UserPo(Long id, String username, String email, AuthState authState) {
         this.id = id;

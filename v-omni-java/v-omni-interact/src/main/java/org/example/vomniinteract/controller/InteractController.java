@@ -44,12 +44,29 @@ public class InteractController {
 
     @PostMapping("/comment")
     public MyResult<String> sendComment(@RequestBody CommentDto commentDto) {
-
+        Long l = interactService.sendComment(commentDto);
+        if(l == null || l == 0) return MyResult.error(429,"写入过于频繁");
         return MyResult.success();
     }
 
     @DeleteMapping("/comment")
     public MyResult<String> deleteComment(@RequestBody CommentDto commentDto) {
+        Long l = interactService.deleteComment(commentDto);
+        if(l == null || l == 0) return MyResult.error(400,"删除失败");
+        return MyResult.success();
+    }
+
+    @PostMapping("/comment/like")
+    public MyResult<String> doCommentLike(String mediaId) {
+        Long l = interactService.doLike(mediaId);
+        if(l == null || l == 0) return MyResult.error(409,"重复点赞");
+        return MyResult.success();
+    }
+
+    @DeleteMapping("/comment/like")
+    public MyResult<String> cancelCommentLike(String mediaId) {
+        Long l = interactService.cancelLike(mediaId);
+        if(l == null || l == 0) return MyResult.error(409,"重复点赞");
         return MyResult.success();
     }
 }

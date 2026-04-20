@@ -8,7 +8,7 @@ import org.example.vomnisearch.po.UserSearchHistoryPo;
 public interface UserSearchHistoryMapper {
 
     @Insert("INSERT INTO u_user_search_history(id, user_id, keyword, create_time, update_time) " +
-            "VALUES (#{id}, #{userId}, #{keyword}, NOW(), NOW()) " +
-            "ON DUPLICATE KEY UPDATE update_time = NOW()")
+            "VALUES (#{id}, #{userId}, #{keyword}, #{createTime}, #{updateTime}) " +
+            "ON DUPLICATE KEY UPDATE update_time = #{updateTime}")
     int addUserSearchHistoryIfAbsentUpdateTime(UserSearchHistoryPo userSearchHistoryPo);
 }

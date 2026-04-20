@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
-public interface VectorMediaService {
+public interface DocumentVectorMediaService {
     void upsert(DocumentVectorMediaPo doc) throws IOException;
     void updateFields(String id, Map<String, Object> fields) throws IOException;
     List<String> hybridSearchIds(java.lang.String queryText, float[] queryVector, java.lang.String author, int size) throws IOException;

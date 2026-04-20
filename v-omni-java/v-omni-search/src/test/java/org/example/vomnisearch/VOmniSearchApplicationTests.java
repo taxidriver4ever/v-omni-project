@@ -6,25 +6,12 @@ import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
 import jakarta.annotation.Resource;
 import org.example.vomnisearch.po.DocumentVectorMediaPo;
-import org.example.vomnisearch.service.EmbeddingService;
-import org.example.vomnisearch.service.VectorMediaService;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Repository;
-import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.LongAdder;
 
 @SpringBootTest
 class VOmniSearchApplicationTests {

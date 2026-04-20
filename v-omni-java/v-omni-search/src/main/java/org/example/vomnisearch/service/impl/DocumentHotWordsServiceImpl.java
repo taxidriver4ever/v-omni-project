@@ -7,8 +7,8 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.example.vomnisearch.po.PrefixSearchPo;
-import org.example.vomnisearch.service.PrefixSearchService;
+import org.example.vomnisearch.po.DocumentHotWordsPo;
+import org.example.vomnisearch.service.DocumentHotWordsService;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 
 @Service
 @Slf4j
-public class PrefixSearchServiceImpl implements PrefixSearchService {
+public class DocumentHotWordsServiceImpl implements DocumentHotWordsService {
 
     @Resource
     private ElasticsearchClient esClient;
@@ -41,9 +41,9 @@ public class PrefixSearchServiceImpl implements PrefixSearchService {
      * 核心改进：增加了 deleted 过滤，防止违规词被联想出来
      */
     @Override
-    public List<PrefixSearchPo> getSuggestions(String prefix) throws IOException {
+    public List<DocumentHotWordsPo> getSuggestions(String prefix) throws IOException {
         try {
-            SearchResponse<PrefixSearchPo> response = esClient.search(s -> s
+            SearchResponse<DocumentHotWordsPo> response = esClient.search(s -> s
                             .index(INDEX_NAME)
                             .query(q -> q.bool(b -> b
                                     // 1. 文本匹配
@@ -53,7 +53,7 @@ public class PrefixSearchServiceImpl implements PrefixSearchService {
                             ))
                             .sort(so -> so.field(f -> f.field(FIELD_SCORE).order(SortOrder.Desc)))
                             .size(10),
-                    PrefixSearchPo.class
+                    DocumentHotWordsPo.class
             );
 
             return response.hits().hits().stream()
@@ -86,9 +86,8 @@ public class PrefixSearchServiceImpl implements PrefixSearchService {
                 Double score = tuple.getScore();
                 if (word == null) continue;
 
-                PrefixSearchPo po = new PrefixSearchPo(word, score, false);
+                DocumentHotWordsPo po = new DocumentHotWordsPo(word, score, false,new Date(),new Date());
                 // 确保同步进来的词默认是未删除的
-                po.setDeleted(false);
 
                 // 将每个词的索引操作加入 Bulk 队列
                 br.operations(op -> op

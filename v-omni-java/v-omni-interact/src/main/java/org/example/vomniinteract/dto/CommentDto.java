@@ -10,6 +10,7 @@ public class CommentDto implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
+    private String id;
     private String content;
     private String rootId;
     private String parentId;

@@ -14,7 +14,7 @@ import co.elastic.clients.json.JsonData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomnisearch.po.DocumentVectorMediaPo;
-import org.example.vomnisearch.service.VectorMediaService;
+import org.example.vomnisearch.service.DocumentVectorMediaService;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @RequiredArgsConstructor
 @Service
-public class VectorMediaServiceImpl implements VectorMediaService {
+public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaService {
 
     private final ElasticsearchClient client;
 

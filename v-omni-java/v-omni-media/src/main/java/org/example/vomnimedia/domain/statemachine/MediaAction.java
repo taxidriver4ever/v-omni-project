@@ -5,25 +5,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.vomnimedia.dto.PreparePublishToMediaDto;
 import org.example.vomnimedia.mapper.MediaMapper;
 import org.example.vomnimedia.po.DocumentVectorMediaPo;
-import org.example.vomnimedia.po.MediaPo;
 import org.example.vomnimedia.service.MinioService;
-import org.example.vomnimedia.service.VectorMediaService;
+import org.example.vomnimedia.service.DocumentVectorMediaService;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @Component
@@ -39,7 +33,7 @@ public class MediaAction {
     private RedisTemplate<String,byte[]> byteRedisTemplate;
 
     @Resource
-    private VectorMediaService vectorMediaService;
+    private DocumentVectorMediaService documentVectorMediaService;
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -100,9 +94,11 @@ public class MediaAction {
                 mediaMapper.selectMediaWithAuthor(mediaEventContext.getId());
 
         documentVectorMediaPo.setEmbedding(vectorFormat);
+        documentVectorMediaPo.setCreateTime(new Date());
+        documentVectorMediaPo.setUpdateTime(new Date());
 
         try {
-            vectorMediaService.upsert(documentVectorMediaPo);
+            documentVectorMediaService.upsert(documentVectorMediaPo);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
