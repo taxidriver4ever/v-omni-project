@@ -6,6 +6,7 @@ PUT /vector_media_index
     "properties": {
       "title": { "type": "text", "analyzer": "ik_max_word" },
       "author": { "type": "keyword" },
+      "cover_path": { "type": "keyword", "index": false }, 
       "like_count": { "type": "integer" },
       "deleted": { "type": "boolean" },
       "create_time": { 
@@ -26,6 +27,7 @@ PUT /vector_media_index
     }
   }
 }
+
 
 
 
@@ -55,6 +57,43 @@ PUT /vomni_hot_suggest
       "create_time": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss.SSS||epoch_millis" },
       "update_time": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss.SSS||epoch_millis" },
       "deleted": { "type": "boolean" }
+    }
+  }
+}
+
+
+DELETE /user_media_interaction_index
+
+PUT /user_media_interaction_index
+{
+  "mappings": {
+    "properties": {
+      "media_id": { "type": "long" },
+      "cover_path": { "type": "keyword", "index": false },
+      "like_count": { "type": "integer" },
+      "like_user_ids": { "type": "keyword" },
+      "collect_user_ids": { "type": "keyword" },
+      "create_time": { "type": "date" }
+    }
+  }
+}
+
+DELETE /user_media_comments_index
+
+PUT /user_media_comments_index
+{
+  "mappings": {
+    "properties": {
+      "comment_id": { "type": "long" },
+      "media_id": { "type": "long" },
+      "user_id": { "type": "long" },
+      "user_name": { "type": "keyword" },
+      "user_avatar": { "type": "keyword", "index": false },
+      "content": { "type": "text", "analyzer": "ik_max_word" },
+      "like_count": { "type": "integer" },
+      "root_id": { "type": "long" },   // 0为主评，非0为该评论所属的根评论ID
+      "parent_id": { "type": "long" }, // 被回复的评论ID
+      "create_time": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||epoch_millis" }
     }
   }
 }

@@ -54,3 +54,10 @@ spring:
           auth: true
           ssl:
             enable: true
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: admin
+  secret-key: ${V_OMNI_MINIO_PASSWORD}
+  bucket-name: v-omni-bucket      # 刚刚创建的存储桶名称
+  upload-url-expiry-seconds: 7200

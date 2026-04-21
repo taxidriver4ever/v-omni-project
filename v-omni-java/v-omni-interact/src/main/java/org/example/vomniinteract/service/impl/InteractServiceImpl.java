@@ -39,6 +39,9 @@ public class InteractServiceImpl implements InteractService {
     private KafkaTemplate<String, DoCommentDto> commentKafkaTemplate;
 
     @Resource
+    private KafkaTemplate<String, DoCommentLikeDto> commentLikeKafkaTemplate;
+
+    @Resource
     private RedissonClient redissonClient;
 
     @Resource
@@ -241,8 +244,12 @@ public class InteractServiceImpl implements InteractService {
     private void sendToKafka(String topic, String action, String mediaId, Long userId, Date now, String type) {
         if ("like".equals(type)) {
             doLikeKafkaTemplate.send(topic, new DoLikeDto(action, mediaId, String.valueOf(userId), now));
-        } else {
+        } else if ("collection".equals(type)) {
             doCollectionKafkaTemplate.send(topic, new DoCollectionDto(action, mediaId, String.valueOf(userId), now));
+        } else if ("comment_like".equals(type)) {
+            // 新增：评论点赞发送逻辑
+            commentLikeKafkaTemplate.send(topic, new DoCommentLikeDto(String.valueOf(userId), mediaId, action, now));
         }
     }
+
 }

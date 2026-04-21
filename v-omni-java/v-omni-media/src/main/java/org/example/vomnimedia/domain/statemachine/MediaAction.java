@@ -83,6 +83,7 @@ public class MediaAction {
     private void synToDatabase(@NotNull MediaEventContext mediaEventContext) {
         Long id = mediaEventContext.getId();
         float[] vectorFromRedis = getVectorFromRedis(mediaEventContext);
+        String coverPath = stringRedisTemplate.opsForValue().get("media:vector:id:" + id);
 
         if (vectorFromRedis == null) return;
         List<Float> vectorFormat = new ArrayList<>(vectorFromRedis.length);
@@ -93,6 +94,7 @@ public class MediaAction {
         DocumentVectorMediaPo documentVectorMediaPo =
                 mediaMapper.selectMediaWithAuthor(mediaEventContext.getId());
 
+        documentVectorMediaPo.setCoverPath(coverPath);
         documentVectorMediaPo.setEmbedding(vectorFormat);
         documentVectorMediaPo.setCreateTime(new Date());
         documentVectorMediaPo.setUpdateTime(new Date());
@@ -102,7 +104,7 @@ public class MediaAction {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        mediaMapper.updateStateAndUrl(id, MediaState.FINISHED.toString());
+        mediaMapper.updateStateAndUrl(id, MediaState.FINISHED.toString(), new Date(), coverPath);
     }
 
     private float[] getVectorFromRedis(@NotNull MediaEventContext mediaEventContext) {

@@ -15,7 +15,7 @@ spring:
       enabled: true
 
 server:
-  port: 18285
+  port: 18284
   tomcat:
     threads:
       max: 500        # 增大工作线程池，与JedisPool的200匹配或更高

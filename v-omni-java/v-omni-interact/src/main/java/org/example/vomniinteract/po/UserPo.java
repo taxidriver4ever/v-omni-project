@@ -1,17 +1,14 @@
-package org.example.vomniauth.po;
+package org.example.vomniinteract.po;
+
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.apache.http.auth.AuthState;
 
 import java.io.Serial;
 import java.io.Serializable;
-
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.NoArgsConstructor;
-import org.example.vomniauth.domain.statemachine.AuthState;
-
-import java.time.LocalDateTime;
 import java.util.Date;
 
 /**

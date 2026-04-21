@@ -31,19 +31,13 @@ public class MediaPo implements Serializable {
     private String title;
     private Long userId;
     private String state;
-    private int deleted;
+    private Boolean deleted;
+    private String coverPath;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
     private Date createTime;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
     private Date updateTime;
-
-    public MediaPo(Long id, Long userId, @NotNull MediaState mediaState, String title) {
-        this.id = id;
-        this.userId = userId;
-        this.state = mediaState.toString();
-        this.title = title;
-    }
 }
 

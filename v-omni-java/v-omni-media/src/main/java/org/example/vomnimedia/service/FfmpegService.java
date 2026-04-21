@@ -18,6 +18,7 @@ public interface FfmpegService {
         compressAndConvertToHLSAndUploadToMinio(id,inputVideoUrl, bucketName, 24, "3000k");
     }
 
+    String extractFinalCover(String customId, String inputVideoUrl) throws Exception;
 
     /**
      * 每隔 intervalSeconds 秒抽取一帧，直接上传到 MinIO 指定桶

@@ -1,7 +1,6 @@
 package org.example.vomnimedia.service.impl;
 
 import io.minio.*;
-import io.minio.errors.*;
 import io.minio.http.Method;
 import io.minio.messages.*;
 import jakarta.annotation.PostConstruct;
@@ -45,6 +44,7 @@ public class MinioServiceImpl implements MinioService {
     private static final String BUCKET_RAWS_VIDEO = "raws-video";
     private static final String BUCKET_FINAL_VIDEO = "final-video";
     private static final String BUCKET_TMP_EXTRACTION_IMAGE = "tmp-extraction-image";
+    private static final String BUCKET_FINAL_COVER = "final-cover";
 
     private static final int LIFECYCLE_EXPIRY_DAYS = 1;
 
@@ -58,13 +58,20 @@ public class MinioServiceImpl implements MinioService {
             createBucketIfNotExists(BUCKET_FINAL_VIDEO);
             createBucketIfNotExists(BUCKET_TMP_EXTRACTION_IMAGE);
 
+            createBucketIfNotExists(BUCKET_FINAL_COVER);
             setBucketLifecycle(BUCKET_RAWS_VIDEO);
             setBucketLifecycle(BUCKET_TMP_EXTRACTION_IMAGE);
+            setBucketPublic();
 
             log.info("✅ MinIO 桶初始化完成，生命周期规则已设置");
         } catch (Exception e) {
             log.error("❌ MinIO 初始化失败", e);
         }
+    }
+
+    private void setBucketPublic() throws Exception {
+        String config = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":[\"s3:GetObject\"],\"Resource\":[\"arn:aws:s3:::" + MinioServiceImpl.BUCKET_FINAL_COVER + "/*\"]}]}";
+        minioClient.setBucketPolicy(SetBucketPolicyArgs.builder().bucket(MinioServiceImpl.BUCKET_FINAL_COVER).config(config).build());
     }
 
     private void createBucketIfNotExists(String bucketName) throws Exception {
@@ -304,4 +311,16 @@ public class MinioServiceImpl implements MinioService {
             }
         }
     }
+
+    // 在 MinioServiceImpl 中实现
+    @Override
+    public String getPublicUrl(String bucketName, String objectName) {
+        // 格式：http://ip:port/bucketName/objectName
+        // 生产环境建议从 config 中读取自定义域名 (如 https://img.v-omni.com)
+        return String.format("%s/%s/%s",
+                minioConfigProperties.getEndpoint(),
+                bucketName,
+                objectName);
+    }
+
 }

@@ -185,4 +185,45 @@ public class FfmpegServiceImpl implements FfmpegService {
             }
         }
     }
+
+
+    @Override
+    public String extractFinalCover(String customId, String inputVideoUrl) throws Exception {
+        log.info("开始抽取视频首帧作为最终封面，ID: {}", customId);
+
+        try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(inputVideoUrl)) {
+            grabber.start();
+
+            // 1. 定位到第1秒
+            long targetTime = 1_000_000L;
+            if (grabber.getLengthInTime() < targetTime) {
+                targetTime = 0;
+            }
+            grabber.setTimestamp(targetTime);
+
+            try (Java2DFrameConverter converter = new Java2DFrameConverter()) {
+                Frame frame = grabber.grabImage();
+                if (frame == null) {
+                    grabber.setTimestamp(0);
+                    frame = grabber.grabImage();
+                }
+
+                if (frame != null) {
+                    BufferedImage image = converter.getBufferedImage(frame);
+                    // 2. 使用自定义 ID 命名
+                    String objectName = customId + ".jpg";
+                    String bucketName = "final-cover";
+
+                    // 3. 上传到 MinIO
+                    minioService.uploadImage(image, bucketName, objectName);
+
+                    log.info("✅ 最终封面上传完成: {}", objectName);
+                    return objectName;
+                }
+            }
+        }
+        throw new RuntimeException("视频帧抓取失败");
+    }
+
+
 }

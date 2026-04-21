@@ -5,29 +5,33 @@ COLLATE utf8mb4_general_ci;
 
 USE `omni_db`;
 
--- 1. 用户表
+-- 1. 用户信息表
 DROP TABLE IF EXISTS `u_user`;
 CREATE TABLE `u_user` (
   `id` BIGINT NOT NULL COMMENT '分布式雪花ID',
   `email` VARCHAR(100) NOT NULL COMMENT '用户邮箱',
   `username` VARCHAR(50) NOT NULL COMMENT '用户名称',
   `state` VARCHAR(50) NOT NULL COMMENT '状态',
-  `create_time` DATETIME(3) NOT NULL COMMENT '毫秒级时间',
-  `update_time` DATETIME(3) NOT NULL COMMENT '毫秒级时间',
+  -- 修改点：从 avatar_url 改为 avatar_path
+  `avatar_path` VARCHAR(255) NOT NULL DEFAULT 'default-avatar.png' COMMENT '头像相对路径',
+  `create_time` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间(毫秒级)',
+  `update_time` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间(毫秒级)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户基本信息表';
 
--- 2. 视频表
+-- 2. 视频信息表
 DROP TABLE IF EXISTS `u_media`;
 CREATE TABLE `u_media` (
   `id` BIGINT NOT NULL COMMENT '分布式雪花ID',
   `user_id` BIGINT NOT NULL COMMENT '上传者ID',
-  `title` VARCHAR(100) NOT NULL,
-  `state` VARCHAR(50) NOT NULL,
-  `deleted` TINYINT(1) NOT NULL DEFAULT 0,
-  `create_time` DATETIME(3) NOT NULL,
-  `update_time` DATETIME(3) NOT NULL,
+  -- 修改点：从 cover_url 改为 cover_path
+  `cover_path` VARCHAR(255) DEFAULT NULL COMMENT '视频封面相对路径',
+  `title` VARCHAR(100) NOT NULL COMMENT '视频标题',
+  `state` VARCHAR(50) NOT NULL COMMENT '状态(草稿/审核/发布)',
+  `deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除(0-未删, 1-已删)',
+  `create_time` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `update_time` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
   KEY `idx_user_list` (`user_id`, `deleted`, `create_time`),
   KEY `idx_display_flow` (`deleted`, `state`, `create_time`)

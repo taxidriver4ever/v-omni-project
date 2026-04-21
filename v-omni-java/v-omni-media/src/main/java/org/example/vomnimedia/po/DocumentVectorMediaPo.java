@@ -20,10 +20,12 @@ public class DocumentVectorMediaPo {
     private String author;
 
     private Boolean deleted;
-    /**
-     * 向量字段
-     */
+
     private List<Float> embedding;
+
+    private String coverPath;
+
+    private Integer likeCount;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
     private Date createTime;

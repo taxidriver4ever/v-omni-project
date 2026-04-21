@@ -1,11 +1,13 @@
 package org.example.vomnimedia.comsumer;
 
 import jakarta.annotation.Resource;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomnimedia.domain.statemachine.MediaEvent;
 import org.example.vomnimedia.domain.statemachine.MediaEventContext;
 import org.example.vomnimedia.domain.statemachine.MediaState;
 import org.example.vomnimedia.domain.statemachine.MediaTransitionService;
+import org.example.vomnimedia.dto.AvatarAndAuthorDto;
 import org.example.vomnimedia.dto.PreparePublishToMediaDto;
 import org.example.vomnimedia.mapper.MediaMapper;
 import org.example.vomnimedia.po.MediaPo;
@@ -30,6 +32,7 @@ import java.time.Duration;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Component
 @Slf4j
@@ -61,6 +64,8 @@ public class MediaConsumer {
 
     @Resource
     private DocumentVectorMediaService documentVectorMediaService;
+
+    private static final int VIDEO_INFO_TTL = 60 * 60 * 24;
 
     private static final String MEDIA_INFO_PREFIX = "media:info:";
 
@@ -99,12 +104,14 @@ public class MediaConsumer {
         String[] parts = message.split("\\|");
         String id = parts[0];
         String downloadUrl = parts[1];
+        String coverPath = ffmpegService.extractFinalCover(id, downloadUrl);
         List<String> frameObjects = ffmpegService.extractFramesEveryNSeconds
                 (id, downloadUrl, 5, "tmp-extraction-image");
         float[] floats = callPythonEmbeddingService(id, frameObjects);
         byte[] bytes = new byte[floats.length * 4];
         ByteBuffer.wrap(bytes).asFloatBuffer().put(floats);
         byteRedisTemplate.opsForValue().set("media:vector:id:" + id, bytes, Duration.ofMinutes(15));
+        stringRedisTemplate.opsForValue().set("media:cover_url:id:" + id, coverPath, Duration.ofMinutes(15));
 
         MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id));
         mediaTransitionService.sendEvent(mediaEventContext, MediaEvent.FINISH_EXTRACTION);
@@ -132,18 +139,22 @@ public class MediaConsumer {
     }
 
     @KafkaListener(topics = "pre-database-topic", groupId = "v-omni-media-group")
-    public void preDatabaseTopicConsume(@NotNull PreparePublishToMediaDto message) throws Exception {
+    public void preDatabaseTopicConsume(@NotNull PreparePublishToMediaDto message) {
         String id = message.getId();
         String userId = message.getUserId();
         String title = message.getTitle();
-        MediaPo mediaPo = new MediaPo(Long.parseLong(id),Long.parseLong(userId),MediaState.PREPARE_PUBLISH_MEDIA, title);
-        mediaPo.setCreateTime(new Date());
-        mediaPo.setUpdateTime(new Date());
+        Date date = new Date();
+        MediaPo mediaPo = new MediaPo(
+                Long.parseLong(id),
+                title,
+                Long.parseLong(userId),
+                MediaState.PREPARE_PUBLISH_MEDIA.toString(),
+                false,
+                "",
+                date,
+                date
+        );
         mediaMapper.insertUser(mediaPo);
-        String author = mediaMapper.selectAuthorById(Long.parseLong(id));
-        String mediaInfoKey = MEDIA_INFO_PREFIX + id;
-        stringRedisTemplate.opsForHash().put(mediaInfoKey, "author" ,author);
-        stringRedisTemplate.opsForHash().put(mediaInfoKey, "title" ,title);
     }
 
 

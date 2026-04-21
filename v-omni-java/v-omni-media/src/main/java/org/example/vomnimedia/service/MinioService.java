@@ -58,4 +58,6 @@ public interface MinioService {
 
     // 上传整个目录（递归），保留相对路径
     void uploadDirectory(File dir, String bucketName, String remotePrefix) throws Exception;
+
+    public String getPublicUrl(String bucketName, String objectName);
 }
