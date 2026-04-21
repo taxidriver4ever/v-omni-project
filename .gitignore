@@ -36,6 +36,7 @@ es-data/
 minio-data/
 tei-data/
 es-plugins/
+minio-data/.minio.sys
 
 # IDE files
 .idea/
