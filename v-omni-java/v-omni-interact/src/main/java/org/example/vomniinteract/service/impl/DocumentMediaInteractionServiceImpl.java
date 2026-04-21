@@ -105,13 +105,17 @@ public class DocumentMediaInteractionServiceImpl implements DocumentMediaInterac
 
             return response.hits().hits().stream().map(hit -> {
                 DocumentMediaInteractionPo po = hit.source();
-                boolean hasLiked = po.getLikeUserIds() != null && po.getLikeUserIds().contains(userId);
-                return InteractionVo.builder()
-                        .mediaId(po.getMediaId())
-                        .coverUrl(minioBaseUrl + "/v-omni-covers/" + po.getCoverPath())
-                        .likeCount(po.getLikeCount())
-                        .liked(hasLiked)
-                        .build();
+                boolean hasLiked = false;
+                if (po != null) {
+                    hasLiked = po.getLikeUserIds() != null && po.getLikeUserIds().contains(userId);
+                    return InteractionVo.builder()
+                            .mediaId(po.getMediaId())
+                            .coverUrl(minioBaseUrl + "/v-omni-covers/" + po.getCoverPath())
+                            .likeCount(po.getLikeCount())
+                            .liked(hasLiked)
+                            .build();
+                }
+                return null;
             }).collect(Collectors.toList());
         } catch (IOException e) {
             log.error("ES查询异常", e);

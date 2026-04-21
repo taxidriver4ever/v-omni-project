@@ -34,15 +34,26 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class MinioServiceImpl implements MinioService {
 
-    @Resource
-    private MinioClient minioClient;
+    // 默认临时链接有效期（分钟）
+    private static final int DEFAULT_EXPIRY_MINUTES = 30;
 
     @Value("${minio.bucket.final-video}")
     private String finalVideoBucket;
 
-    // 默认临时链接有效期（分钟）
-    private static final int DEFAULT_EXPIRY_MINUTES = 30;
+    @Resource
+    private MinioClient minioClient;
 
+    // 基础访问地址，建议配置在 yml 中，方便后期切线上环境
+    @Value("${minio.base-url:http://localhost:9000}")
+    private String minioBaseUrl;
+
+
+    // 从配置文件读取，或根据截图直接定义
+    @Value("${minio.bucket.avatar:v-omni-avatars}")
+    private String avatarBucket;
+
+    @Value("${minio.bucket.final-cover:final-cover}")
+    private String coverBucket;
     /**
      * 生成视频 HLS 主播放列表的临时签名 URL
      *
@@ -54,6 +65,44 @@ public class MinioServiceImpl implements MinioService {
         String objectName = "hls/" + videoId + "/master.m3u8";  // 文件名请与实际保持一致
         return generatePreSignedUrl(finalVideoBucket, objectName, DEFAULT_EXPIRY_MINUTES);
     }
+    /**
+     * 获取公开头像链接
+     * @param relativePath 数据库存的路径，如 "2026/04/21/avatar_1.png"
+     * @return <a href="http://localhost:9000/v-omni-avatars/2026/04/21/avatar_1.png">...</a>
+     */
+    @Override
+    public String generateAvatarUrl(String relativePath) {
+        return buildPublicUrl(avatarBucket, relativePath);
+    }
+
+    /**
+     * 获取公开封面链接
+     * @param relativePath 数据库存的路径
+     * @return <a href="http://localhost:9000/final-cover/xxx.jpg">...</a>
+     */
+    @Override
+    public String generateCoverUrl(String relativePath) {
+        return buildPublicUrl(coverBucket, relativePath);
+    }
+
+    /**
+     * 通用公开链接拼接
+     */
+    private String buildPublicUrl(String bucket, String relativePath) {
+        if (relativePath == null || relativePath.isEmpty()) {
+            return "";
+        }
+        // 处理路径开头的斜杠，防止拼接出 http://...//path
+        String path = relativePath.startsWith("/") ? relativePath.substring(1) : relativePath;
+
+        // 格式：Endpoint / Bucket / Path
+        StringBuilder sb = new StringBuilder(minioBaseUrl);
+        if (!minioBaseUrl.endsWith("/")) {
+            sb.append("/");
+        }
+        return sb.append(bucket).append("/").append(path).toString();
+    }
+
 
     /**
      * 通用方法：生成指定对象的临时签名 URL

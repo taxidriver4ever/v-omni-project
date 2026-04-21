@@ -1,10 +1,14 @@
 package org.example.vomnisearch.service.impl;
 
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
+import org.example.vomnisearch.dto.SearchHistoryDTO;
+import org.example.vomnisearch.dto.SearchMediaRequestDto;
 import org.example.vomnisearch.service.EmbeddingService;
 import org.example.vomnisearch.service.MinioService;
 import org.example.vomnisearch.service.SearchService;
 import org.example.vomnisearch.service.DocumentVectorMediaService;
+import org.example.vomnisearch.vo.SearchMediaVo;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -36,31 +40,50 @@ public class SearchServiceImpl implements SearchService {
     @Resource
     private KafkaTemplate<String, String> kafkaTemplate;
 
+    @Resource
+    private KafkaTemplate<String, SearchHistoryDTO> searchHistoryDTOKafkaTemplate;
+
     private static final String HISTORY_PREFIX = "search:keyword:user_id:";
 
+    private final static String USER_HISTORY_TOPIC = "user-history-topic";
 
     @Override
-    public List<String> searchVideo(@NotNull String content) throws Exception {
+    public List<SearchMediaVo> searchVideo(@NotNull SearchMediaRequestDto searchMediaRequestDto,
+                                    HttpServletRequest request) throws Exception {
+
+        String content = searchMediaRequestDto.getQueryText();
+        Integer page = searchMediaRequestDto.getPage();
+        Long userId = (Long) request.getAttribute("current_user_id");
+
+        if(content == null || content.isEmpty() || page < 1) return Collections.emptyList();
+        if(content.length() > 50) content = content.substring(0, 50);
+        if (userId != null) {
+            SearchHistoryDTO dto = new SearchHistoryDTO(userId, content);
+            searchHistoryDTOKafkaTemplate.send(USER_HISTORY_TOPIC, dto);
+        }
+
         kafkaTemplate.send(HOT_WORD_TOPIC,content);
+
         float[][] vector = embeddingService.getVector(content);
         if (vector == null || vector.length == 0) {
             return Collections.emptyList();
         }
-        List<String> strings = documentVectorMediaService.hybridSearchIds(content, vector[0], content, 10);
-        if(strings == null || strings.isEmpty()) return List.of();
-        List<String> results = new ArrayList<>();
-        for (String string : strings) {
+
+        List<SearchMediaVo> searchMediaVos = documentVectorMediaService.hybridSearch(content, vector[0], page, 10);
+        if(searchMediaVos == null || searchMediaVos.isEmpty()) return Collections.emptyList();
+        for (SearchMediaVo searchMediaVo : searchMediaVos) {
+            String string = searchMediaVo.getMediaId();
             String urlKey = "search:url:media-id:" + string;
             String redisUrl = stringRedisTemplate.opsForValue().get(urlKey);
             if(redisUrl != null) {
-                results.add(redisUrl);
+                searchMediaVo.setMediaUrl(redisUrl);
                 continue;
             }
             String s = minioService.generateHlsPlaybackUrl(string);
             stringRedisTemplate.opsForValue().setIfAbsent(urlKey, s, 29, TimeUnit.MINUTES);
-            results.add(s);
+            searchMediaVo.setMediaUrl(s);
         }
-        return results;
+        return searchMediaVos;
     }
 
     @Override

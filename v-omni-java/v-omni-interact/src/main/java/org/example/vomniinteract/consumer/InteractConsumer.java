@@ -115,12 +115,12 @@ public class InteractConsumer {
     }
 
     /**
-     * 4. 评论发布/删除消费者 (含联查用户信息)
+     * 4. 评论发布/删除消费者 (支持级联删除)
      */
     @Transactional
     @KafkaListener(topics = "database-comment-topic", groupId = "v-omni-interaction-group")
     public void databaseCommentTopicConsume(List<DoCommentDto> messages) {
-        // 1. 批量联查用户信息
+        // 1. 批量联查用户信息 (逻辑不变)
         List<Long> userIds = messages.stream()
                 .filter(m -> !"0".equals(m.getAction()))
                 .map(m -> Long.parseLong(m.getUserId())).distinct().toList();
@@ -129,37 +129,54 @@ public class InteractConsumer {
                 commentMapper.selectUserInfosByIds(userIds).stream().collect(Collectors.toMap(UserPo::getId, u -> u));
 
         List<DocumentCommentPo> saveList = new ArrayList<>();
-        List<Long> deleteList = new ArrayList<>();
+        List<DoCommentDto> deleteMessages = new ArrayList<>();
 
         for (DoCommentDto m : messages) {
             boolean isAdd = !"0".equals(m.getAction());
+
+            // 预防性转换，避免因字段缺失导致后续逻辑崩溃
+            long cId = (m.getId() == null || m.getId().isEmpty()) ? 0L : Long.parseLong(m.getId());
+            long rId = (m.getRootId() == null || m.getRootId().isEmpty()) ? 0L : Long.parseLong(m.getRootId());
             Long uId = Long.parseLong(m.getUserId());
             Long mId = Long.parseLong(m.getMediaId());
 
             if (isAdd) {
-                Long cId = (m.getId() == null || "0".equals(m.getId())) ? snowflakeIdWorker.nextId() : Long.parseLong(m.getId());
+                // 如果是新评论，生成 ID
+                long finalId = (cId == 0) ? snowflakeIdWorker.nextId() : cId;
+
                 // MySQL 存入
-                commentMapper.insertComment(CommentPo.builder().id(cId).mediaId(mId).userId(uId)
-                        .rootId(Long.parseLong(m.getRootId())).parentId(Long.parseLong(m.getParentId()))
+                commentMapper.insertComment(CommentPo.builder().id(finalId).mediaId(mId).userId(uId)
+                        .rootId(rId).parentId(Long.parseLong(m.getParentId()))
                         .content(m.getContent()).createTime(m.getCreateTime()).build());
 
                 // 封装 ES 对象
                 UserPo user = userMap.get(uId);
-                saveList.add(DocumentCommentPo.builder().commentId(cId).mediaId(mId).userId(uId)
+                saveList.add(DocumentCommentPo.builder().commentId(finalId).mediaId(mId).userId(uId)
                         .userName(user != null ? user.getUsername() : "用户已注销")
                         .userAvatar(user != null ? user.getAvatarPath() : "default.png")
-                        .content(m.getContent()).likeCount(0).rootId(Long.parseLong(m.getRootId()))
+                        .content(m.getContent()).likeCount(0).rootId(rId)
                         .parentId(Long.parseLong(m.getParentId())).createTime(m.getCreateTime()).build());
             } else {
-                Long cId = Long.parseLong(m.getId());
+                // --- 删除逻辑核心 ---
+                // 1. MySQL 物理/逻辑删除自身
                 commentMapper.deleteCommentById(cId);
-                deleteList.add(cId);
+
+                // 2. 如果是根评论，执行级联删除回复
+                if (rId == 0) {
+                    commentMapper.deleteRepliesByRootId(cId);
+                    log.info("根评论删除，已触发 MySQL 级联清理回复. rootId: {}", cId);
+                }
+
+                deleteMessages.add(m);
             }
         }
 
-        // 批量执行 ES 写入/删除
-        if (!saveList.isEmpty() || !deleteList.isEmpty()) {
-            documentCommentService.bulkProcessComments(saveList, deleteList);
+        // 3. 批量同步到 ES (调用你之前写的分流 bulk 方法)
+        if (!saveList.isEmpty() || !deleteMessages.isEmpty()) {
+            documentCommentService.bulkProcessComments(saveList, deleteMessages);
         }
     }
+
+
+
 }

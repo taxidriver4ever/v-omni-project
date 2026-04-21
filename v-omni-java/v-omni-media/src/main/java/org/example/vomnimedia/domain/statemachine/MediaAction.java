@@ -91,20 +91,23 @@ public class MediaAction {
             vectorFormat.add(v);
         }
 
+        Date updateDate = new Date();
+
         DocumentVectorMediaPo documentVectorMediaPo =
                 mediaMapper.selectMediaWithAuthor(mediaEventContext.getId());
 
         documentVectorMediaPo.setCoverPath(coverPath);
         documentVectorMediaPo.setEmbedding(vectorFormat);
-        documentVectorMediaPo.setCreateTime(new Date());
-        documentVectorMediaPo.setUpdateTime(new Date());
+        documentVectorMediaPo.setCreateTime(updateDate);
+        documentVectorMediaPo.setUpdateTime(updateDate);
+        documentVectorMediaPo.setLikeCount(0);
 
         try {
             documentVectorMediaService.upsert(documentVectorMediaPo);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        mediaMapper.updateStateAndUrl(id, MediaState.FINISHED.toString(), new Date(), coverPath);
+        mediaMapper.updateStateAndUrl(id, MediaState.FINISHED.toString(), updateDate, coverPath);
     }
 
     private float[] getVectorFromRedis(@NotNull MediaEventContext mediaEventContext) {

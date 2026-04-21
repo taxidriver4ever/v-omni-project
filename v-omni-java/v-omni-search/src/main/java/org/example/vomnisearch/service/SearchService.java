@@ -1,12 +1,15 @@
 package org.example.vomnisearch.service;
 
+import jakarta.servlet.http.HttpServletRequest;
+import org.example.vomnisearch.dto.SearchMediaRequestDto;
 import org.example.vomnisearch.dto.UserContent;
+import org.example.vomnisearch.vo.SearchMediaVo;
 import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.List;
 
 public interface SearchService {
-    List<String> searchVideo(String content) throws Exception;
+    List<SearchMediaVo> searchVideo(SearchMediaRequestDto searchMediaRequestDto, HttpServletRequest request) throws Exception;
     /**
      * 获取用户最近的搜索词
      * @param userId 用户ID

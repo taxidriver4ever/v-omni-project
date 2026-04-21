@@ -6,6 +6,7 @@ PUT /vector_media_index
     "properties": {
       "title": { "type": "text", "analyzer": "ik_max_word" },
       "author": { "type": "keyword" },
+      "avatar_path": { "type": "keyword", "index": false },     
       "cover_path": { "type": "keyword", "index": false }, 
       "like_count": { "type": "integer" },
       "deleted": { "type": "boolean" },

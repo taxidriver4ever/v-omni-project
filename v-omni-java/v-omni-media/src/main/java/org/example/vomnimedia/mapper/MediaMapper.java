@@ -19,6 +19,7 @@ public interface MediaMapper {
     @Select("""
         SELECT m.id AS id,
             m.title AS title,
+            u.avatar_path AS avatarPath,
             u.username AS author
         FROM u_media m
         INNER JOIN u_user u ON m.user_id = u.id

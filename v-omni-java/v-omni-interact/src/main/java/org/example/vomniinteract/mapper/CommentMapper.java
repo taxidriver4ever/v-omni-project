@@ -18,7 +18,7 @@ public interface CommentMapper {
      * 根据 root_id 逻辑删除整条评论树
      */
     @Update("UPDATE u_comment SET deleted = 1 WHERE root_id = #{rootId}")
-    int deleteCommentByRootId(@Param("rootId") Long rootId);
+    int deleteRepliesByRootId(@Param("rootId") Long rootId);
 
     /**
      * 根据 id 逻辑删除单条评论

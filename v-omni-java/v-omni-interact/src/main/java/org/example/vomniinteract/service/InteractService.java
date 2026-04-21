@@ -9,6 +9,6 @@ public interface InteractService {
     Long cancelCollection(String mediaId);
     Long sendComment(CommentDto commentDto);
     Long deleteComment(CommentDto commentDto);
-    Long doCommentLike(String mediaId);
-    Long cancelCommentLike(String mediaId);
+    Long doCommentLike(String commentId);
+    Long cancelCommentLike(String commentId);
 }

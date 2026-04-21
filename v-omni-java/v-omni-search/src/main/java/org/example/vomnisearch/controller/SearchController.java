@@ -4,10 +4,12 @@ import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.example.vomnisearch.common.MyResult;
 import org.example.vomnisearch.dto.SearchHistoryDTO;
+import org.example.vomnisearch.dto.SearchMediaRequestDto;
 import org.example.vomnisearch.dto.UserContent;
 import org.example.vomnisearch.po.DocumentHotWordsPo;
 import org.example.vomnisearch.service.*;
 import org.example.vomnisearch.util.SecurityUtils;
+import org.example.vomnisearch.vo.SearchMediaVo;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,30 +20,18 @@ import java.util.List;
 @RequestMapping("/search")
 public class SearchController {
 
-    private final static String USER_HISTORY_TOPIC = "user-history-topic";
-
     @Resource
     private SearchService searchService;
 
     @Resource
     private DocumentHotWordsService documentHotWordsService;
 
-    @Resource
-    private KafkaTemplate<String, SearchHistoryDTO> kafkaTemplate;
-
     @PostMapping("/hybrid/video")
-    public MyResult<List<String>> searchVideo(@RequestBody UserContent userContent, HttpServletRequest request) throws Exception {
-        String content = userContent.getContent();
-        if(content == null || content.isEmpty()) return MyResult.error(403,"没法查");
-        if(content.length() > 50) content = content.substring(0, 50);
-        Long userId = (Long) request.getAttribute("current_user_id");
-        if (userId != null) {
-            SearchHistoryDTO dto = new SearchHistoryDTO(userId, content);
-            kafkaTemplate.send(USER_HISTORY_TOPIC, dto);
-        }
-        List<String> strings = searchService.searchVideo(content);
-        if (strings.isEmpty()) return MyResult.error(404,"找不到视频");
-        return MyResult.success(strings);
+    public MyResult<List<SearchMediaVo>> searchVideo(@RequestBody SearchMediaRequestDto searchMediaRequestDto,
+                                              HttpServletRequest httpServletRequest) throws Exception {
+        List<SearchMediaVo> searchMediaVos = searchService.searchVideo(searchMediaRequestDto, httpServletRequest);
+        if (searchMediaVos.isEmpty()) return MyResult.error(404,"找不到视频");
+        return MyResult.success(searchMediaVos);
     }
 
     @PostMapping("/prefix/hot-word")

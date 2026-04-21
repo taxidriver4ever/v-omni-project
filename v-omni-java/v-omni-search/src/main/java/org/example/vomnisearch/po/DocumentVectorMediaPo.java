@@ -19,6 +19,12 @@ public class DocumentVectorMediaPo {
 
     private String author;
 
+    private String avatarPath;
+
+    private String coverPath;
+
+    private Integer likeCount;
+
     private Boolean deleted;
     /**
      * 向量字段

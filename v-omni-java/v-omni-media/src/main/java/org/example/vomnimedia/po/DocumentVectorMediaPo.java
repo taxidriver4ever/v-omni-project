@@ -23,6 +23,8 @@ public class DocumentVectorMediaPo {
 
     private List<Float> embedding;
 
+    private String avatarPath;
+
     private String coverPath;
 
     private Integer likeCount;
