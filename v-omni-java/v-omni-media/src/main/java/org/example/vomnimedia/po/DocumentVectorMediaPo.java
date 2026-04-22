@@ -21,7 +21,9 @@ public class DocumentVectorMediaPo {
 
     private Boolean deleted;
 
-    private List<Float> embedding;
+    private List<Float> videoEmbedding; // 存放视频画面向量
+
+    private List<Float> textEmbedding;  // 存放标题文字向量
 
     private String avatarPath;
 

@@ -19,17 +19,17 @@ public class DocumentVectorMediaPo {
 
     private String author;
 
+    private Boolean deleted;
+
+    private List<Float> videoEmbedding; // 存放视频画面向量
+
+    private List<Float> textEmbedding;  // 存放标题文字向量
+
     private String avatarPath;
 
     private String coverPath;
 
     private Integer likeCount;
-
-    private Boolean deleted;
-    /**
-     * 向量字段
-     */
-    private List<Float> embedding;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
     private Date createTime;

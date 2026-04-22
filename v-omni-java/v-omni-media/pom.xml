@@ -115,6 +115,16 @@
             <artifactId>elasticsearch-java</artifactId>
             <version>8.12.2</version>
         </dependency>
+        <dependency>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+            <version>1.16.3</version>
+        </dependency>
+        <dependency>
+            <groupId>org.nd4j</groupId>
+            <artifactId>nd4j-native-platform</artifactId>
+            <version>1.0.0-M2.1</version>
+        </dependency>
 
         <!-- JSON 序列化 -->
         <dependency>

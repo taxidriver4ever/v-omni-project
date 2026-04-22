@@ -6,11 +6,9 @@ import co.elastic.clients.elasticsearch._types.query_dsl.*;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
-import co.elastic.clients.elasticsearch.core.search.SourceConfig;
 import co.elastic.clients.elasticsearch.indices.AnalyzeRequest;
 import co.elastic.clients.elasticsearch.indices.AnalyzeResponse;
 import co.elastic.clients.elasticsearch.indices.analyze.AnalyzeToken;
-import co.elastic.clients.json.JsonData;
 import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,21 +32,23 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
 
     private static final String INDEX = "vector_media_index";
 
-    // 字段名常量
+    // 字段名常量（需与 ES Mapping 严格对应）
     private static final String FIELD_TITLE = "title";
     private static final String FIELD_AUTHOR = "author";
-    private static final String FIELD_VECTOR = "embedding";
-    private static final String FIELD_DELETED = "deleted"; // 修正后的字段名
+    private static final String FIELD_DELETED = "deleted";
+    private static final String FIELD_VIDEO_VECTOR = "video_embedding";
+    private static final String FIELD_TEXT_VECTOR = "text_embedding";
 
-    // 权重配置
-    private static final double WEIGHT_TITLE = 0.35d;
-    private static final double WEIGHT_AUTHOR = 0.4d;
-    private static final double WEIGHT_VECTOR = 0.1d;
+    // 权重配置：三路召回配比
+    private static final float WEIGHT_QUERY_MATCH = 0.3f;  // 文本关键词权重
+    private static final float WEIGHT_TEXT_VECTOR = 0.4f;   // 标题语义向量权重
+    private static final float WEIGHT_VIDEO_VECTOR = 0.3f;  // 视频画面向量权重
 
     @Resource
     private MinioService minioService;
+
     /**
-     * ① 全量写入（带默认值检查）
+     * ① 全量写入
      */
     @Override
     public void upsert(DocumentVectorMediaPo doc) throws IOException {
@@ -79,64 +79,67 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
     }
 
     /**
-     * 统一混合搜索：queryText 同时匹配标题和作者，支持分页
-     * @param queryText 搜索文本 (同时匹配 FIELD_TITLE 和 FIELD_AUTHOR)
-     * @param queryVector 向量数据
-     * @param page 页码
-     * @param size 每页大小
+     * 核心方法：多路混合搜索（文本 + 双向量）
      */
     @Override
     public List<SearchMediaVo> hybridSearch(String queryText, float[] queryVector, int page, int size) throws IOException {
-        // 1. 向量转换
+        // 1. 向量转换：ES Client KnnQuery 接收 List<Float>
         List<Float> vectorList = new ArrayList<>();
         if (queryVector != null) {
             for (float v : queryVector) vectorList.add(v);
         }
 
-        // 2. 基础过滤：未删除
+        // 2. 基础过滤条件：必须是未删除的数据
         Query filterQuery = Query.of(f -> f.term(t -> t.field(FIELD_DELETED).value(false)));
 
-        // 3. 构建核心查询逻辑 (Function Score)
-        // 我们将标题匹配、作者匹配和向量检索(如果有) 组合在一起应用权重
-        Query functionScoreQuery = Query.of(q -> q.functionScore(fs -> fs
-                .query(filterQuery) // 在未删除的基础上评分
-                .functions(f -> f
-                        // 标题权重：WEIGHT_TITLE (0.35)
-                        .filter(Query.of(q1 -> q1.match(m -> m.field(FIELD_TITLE).query(queryText))))
-                        .weight(WEIGHT_TITLE)
-                )
-                .functions(f -> f
-                        // 作者权重：WEIGHT_AUTHOR (0.4)
-                        .filter(Query.of(q2 -> q2.match(m -> m.field(FIELD_AUTHOR).query(queryText))))
-                        .weight(WEIGHT_AUTHOR)
-                )
-                .scoreMode(FunctionScoreMode.Sum)    // 各个函数得分相加
-                .boostMode(FunctionBoostMode.Replace) // 替换原始得分，完全由权重决定
+        // 3. 第一路：文本关键词匹配查询 (Boolean Query)
+        // 使用 boost 调整该路在整体评分中的权重
+        Query textMatchQuery = Query.of(q -> q.bool(b -> b
+                .should(s -> s.match(m -> m.field(FIELD_TITLE).query(queryText).boost(2.0f))) // 标题匹配更重要
+                .should(s -> s.match(m -> m.field(FIELD_AUTHOR).query(queryText)))
+                .minimumShouldMatch("1")
+                .filter(filterQuery)
         ));
 
-        // 4. 构建 KNN 向量检索 (独立路径)
-        // 注意：向量检索在 ES 8 中是独立平行的，我们通过 boost 来体现 WEIGHT_VECTOR (0.1)
-        KnnQuery knnQuery = vectorList.isEmpty() ? null : KnnQuery.of(k -> k
-                .field(FIELD_VECTOR)
-                .queryVector(vectorList)
-                .k(size)
-                .numCandidates(100)
-                .filter(filterQuery)
-                .boost((float) WEIGHT_VECTOR) // 向量权重：0.1
-        );
+        // 4. 第二路 & 第三路：双向量 KNN 检索
+        List<KnnQuery> knnQueries = new ArrayList<>();
+        if (!vectorList.isEmpty()) {
+            // A. 标题语义向量路
+            knnQueries.add(KnnQuery.of(k -> k
+                    .field(FIELD_TEXT_VECTOR)
+                    .queryVector(vectorList)
+                    .k(size)
+                    .numCandidates(100)
+                    .boost(WEIGHT_TEXT_VECTOR)
+                    .filter(filterQuery)
+            ));
 
-        // 5. 执行搜索与分页
+            // B. 视频画面向量路
+            knnQueries.add(KnnQuery.of(k -> k
+                    .field(FIELD_VIDEO_VECTOR)
+                    .queryVector(vectorList)
+                    .k(size)
+                    .numCandidates(100)
+                    .boost(WEIGHT_VIDEO_VECTOR)
+                    .filter(filterQuery)
+            ));
+        }
+
+        // 5. 执行搜索请求
         SearchRequest request = SearchRequest.of(s -> s
                 .index(INDEX)
-                .query(functionScoreQuery) // 文本权重查询
-                .knn(knnQuery)            // 向量权重查询
+                .query(q -> q.bool(b -> b
+                        .must(textMatchQuery)
+                        .boost(WEIGHT_QUERY_MATCH) // 设置文本路整体权重
+                ))
+                .knn(knnQueries) // 注入多路 KNN 查询
                 .from((page - 1) * size)
                 .size(size)
         );
 
         SearchResponse<DocumentVectorMediaPo> response = client.search(request, DocumentVectorMediaPo.class);
 
-        // 6. 结果映射
+        // 6. 结果映射转换
         return response.hits().hits().stream()
                 .map(hit -> {
                     DocumentVectorMediaPo po = hit.source();
@@ -157,15 +160,13 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
                 .collect(Collectors.toList());
     }
 
-
     /**
-     * 文本搜索：增加 deleted 过滤
+     * 基础文本搜索
      */
     @Override
     public List<DocumentVectorMediaPo> textSearch(String queryText, String author, int size) throws IOException {
         BoolQuery.Builder boolBuilder = new BoolQuery.Builder();
 
-        // 核心：强制过滤已删除的数据
         boolBuilder.filter(f -> f.term(t -> t.field(FIELD_DELETED).value(false)));
 
         if (queryText != null && !queryText.isBlank()) {
@@ -185,40 +186,13 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
         return response.hits().hits().stream().map(Hit::source).collect(Collectors.toList());
     }
 
+    /**
+     * 文本分词分析
+     */
     @Override
     public List<String> analyzeText(String text) throws IOException {
         AnalyzeRequest request = AnalyzeRequest.of(a -> a.index(INDEX).analyzer("ik_smart").text(text));
         AnalyzeResponse response = client.indices().analyze(request);
         return response.tokens().stream().map(AnalyzeToken::token).toList();
-    }
-
-    private List<FunctionScore> buildScoreFunctions(String queryText, float[] queryVector, String author) {
-        List<FunctionScore> functions = new ArrayList<>();
-
-        functions.add(FunctionScore.of(f -> f
-                .filter(Query.of(q -> q.match(m -> m.field(FIELD_TITLE).query(queryText))))
-                .weight(WEIGHT_TITLE)
-        ));
-
-        if (author != null && !author.isBlank()) {
-            functions.add(FunctionScore.of(f -> f
-                    .filter(Query.of(q -> q.match(m -> m.field(FIELD_AUTHOR).query(author))))
-                    .weight(WEIGHT_AUTHOR)
-            ));
-        }
-
-        functions.add(FunctionScore.of(f -> f
-                .scriptScore(s -> s
-                        .script(script -> script
-                                .inline(inline -> inline
-                                        .source("cosineSimilarity(params.query_vector, '" + FIELD_VECTOR + "') + 1.0")
-                                        .params("query_vector", JsonData.of(queryVector))
-                                )
-                        )
-                )
-                .weight(WEIGHT_VECTOR)
-        ));
-
-        return functions;
     }
 }

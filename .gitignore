@@ -42,3 +42,8 @@ minio-data/.minio.sys
 .idea/
 *.iml
 .vscode/
+
+# Model / export artifacts
+*.onnx
+*.pt
+*.pth

@@ -79,10 +79,7 @@ services:
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
-      # 启用 Kafka 通知（PRIMARY 是自定义标识符，可任意取名）
-      MINIO_NOTIFY_KAFKA_ENABLE_PRIMARY: "on"
-      MINIO_NOTIFY_KAFKA_BROKERS_PRIMARY: "my-kafka:9092"
-      MINIO_NOTIFY_KAFKA_TOPIC_PRIMARY: "minio-url-topic"
+      # 🚨 已删除 KAFKA 通知相关环境变量，不再由 MinIO 自动发消息
     volumes:
       - ./minio-data:/data
     command: server /data --console-address ":9001"
@@ -104,17 +101,20 @@ services:
       - v-omni-network
     entrypoint: >
       /bin/sh -c "
-      echo 'Waiting for MinIO to warm up Kafka connection...';
-      sleep 10;
+      sleep 5;
       mc alias set myminio http://my-minio:9000 admin password123;
+      # 1. 创建必要的业务桶
       mc mb --ignore-existing myminio/raws-video;
-      mc mb --ignore-existing myminio/tmp-extraction-image;
       mc mb --ignore-existing myminio/final-video;
+      mc mb --ignore-existing myminio/final-cover;
+      
+      # 2. 设置生命周期规则（原始视频 1 天后自动过期，节省空间）
       mc ilm rule add --expire-days 1 myminio/raws-video;
-      mc ilm rule add --expire-days 1 myminio/tmp-extraction-image;
-      # 尝试绑定，如果失败则等待 5 秒再试一次（增加鲁棒性）
-      mc event add myminio/raws-video arn:minio:sqs::PRIMARY:kafka --event put || 
-      (sleep 5 && mc event add myminio/raws-video arn:minio:sqs::PRIMARY:kafka --event put);
+      
+      # 3. 设置封面桶为公共读（方便前端直接访问图片）
+      mc policy set public myminio/final-cover;
+
+      # 🚨 移除了 mc event add 绑定逻辑，因为现在由 Java 手动发消息
       echo 'MinIO initialization completed';
       exit 0;
       "
@@ -150,7 +150,7 @@ services:
     image: docker.elastic.co/kibana/kibana:8.12.2
     container_name: my-kibana
     ports:
-      - "5601:5601"
+      - "15601:5601"
     environment:
       - ELASTICSEARCH_HOSTS=http://my-elasticsearch:9200
     depends_on:

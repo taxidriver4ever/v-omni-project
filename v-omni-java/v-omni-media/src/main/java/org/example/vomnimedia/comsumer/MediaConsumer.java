@@ -7,13 +7,13 @@ import org.example.vomnimedia.domain.statemachine.MediaEvent;
 import org.example.vomnimedia.domain.statemachine.MediaEventContext;
 import org.example.vomnimedia.domain.statemachine.MediaState;
 import org.example.vomnimedia.domain.statemachine.MediaTransitionService;
-import org.example.vomnimedia.dto.AvatarAndAuthorDto;
-import org.example.vomnimedia.dto.PreparePublishToMediaDto;
+import org.example.vomnimedia.dto.*;
 import org.example.vomnimedia.mapper.MediaMapper;
 import org.example.vomnimedia.po.MediaPo;
 import org.example.vomnimedia.service.FfmpegService;
 import org.example.vomnimedia.service.MinioService;
 import org.example.vomnimedia.service.DocumentVectorMediaService;
+import org.example.vomnimedia.service.VectorService;
 import org.example.vomnimedia.util.MinioEventParser;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,7 +45,7 @@ public class MediaConsumer {
     private MinioService minioService;
 
     @Resource
-    private KafkaTemplate<String, String> kafkaTemplate;
+    private KafkaTemplate<String, HandleMediaDto> handleMediaDtoKafkaTemplate;
 
     @Resource
     private FfmpegService ffmpegService;
@@ -65,34 +65,34 @@ public class MediaConsumer {
     @Resource
     private DocumentVectorMediaService documentVectorMediaService;
 
-    private static final int VIDEO_INFO_TTL = 60 * 60 * 24;
+    @Resource
+    private VectorService vectorService;
 
-    private static final String MEDIA_INFO_PREFIX = "media:info:";
+    private static final String RAWS_VIDEO = "raws-video";
 
-    @KafkaListener(topics = "minio-url-topic", groupId = "v-omni-media-group")
-    public void getUrlTopicConsume(@NotNull String message) {
-        MinioEventParser.MinioFileInfo fileInfo = MinioEventParser.parse(message, MINIO_HOST);
-        if (fileInfo == null) {
-            log.warn("无法解析 MinIO 事件消息");
-            return;
-        }
+    @KafkaListener(topics = "video-process-topic", groupId = "v-omni-media-group")
+    public void getUrlTopicConsume(@NotNull PublishRequestDto message) {
+        String title = message.getTitle();
+        String userId = message.getUserId();
+        String id = message.getMediaId();
 
-        String bucketName = fileInfo.getBucketName();
-        Long id = fileInfo.getMediaId();
-
-        if(!bucketName.equals("raws-video")) return;
-
-        MediaEventContext mediaEventContext = new MediaEventContext(id);
+        MediaEventContext mediaEventContext = new MediaEventContext(Long.valueOf(id));
         MediaState mediaState = mediaTransitionService.sendEvent(mediaEventContext, MediaEvent.START_PROCESSING);
 
         if(!mediaState.equals(MediaState.PROCESSING)) return;
 
         try {
-            String downloadUrl = minioService.getDownloadUrl(bucketName, id.toString());
+            String downloadUrl = minioService.getDownloadUrl(RAWS_VIDEO, id);
 
-            String messageToSend = id + "|" + downloadUrl;
-            kafkaTemplate.send("frame-extraction-topic", messageToSend);
-            kafkaTemplate.send("decode-media-topic", messageToSend);
+            HandleMediaDto messageToSend = HandleMediaDto.builder()
+                    .downloadUrl(downloadUrl)
+                    .mediaId(id)
+                    .title(title)
+                    .userId(userId)
+                    .build();
+
+            handleMediaDtoKafkaTemplate.send("frame-extraction-topic", messageToSend);
+            handleMediaDtoKafkaTemplate.send("decode-media-topic", messageToSend);
 
         } catch (Exception e) {
             log.error("生成下载链接失败: {}", e.getMessage(), e);
@@ -100,93 +100,51 @@ public class MediaConsumer {
     }
 
     @KafkaListener(topics = "frame-extraction-topic", groupId = "v-omni-media-group")
-    public void frameExtractionTopicConsume(@NotNull String message) throws Exception {
-        String[] parts = message.split("\\|");
-        String id = parts[0];
-        String downloadUrl = parts[1];
+    public void frameExtractionTopicConsume(@NotNull HandleMediaDto message) throws Exception {
+        String id = message.getMediaId();
+        String downloadUrl = message.getDownloadUrl();
         String coverPath = ffmpegService.extractFinalCover(id, downloadUrl);
-        List<String> frameObjects = ffmpegService.extractFramesEveryNSeconds
-                (id, downloadUrl, 5, "tmp-extraction-image");
-        float[] floats = callPythonEmbeddingService(id, frameObjects);
+        String title = message.getTitle();
+        String userId = message.getUserId();
+        float[] floats = ffmpegService.extractVideoVector(id,downloadUrl);
+        float[] textVector = vectorService.getTextVector(title);
+
         byte[] bytes = new byte[floats.length * 4];
         ByteBuffer.wrap(bytes).asFloatBuffer().put(floats);
-        byteRedisTemplate.opsForValue().set("media:vector:id:" + id, bytes, Duration.ofMinutes(15));
+
+        byte[] titleBytes = new byte[textVector.length * 4];
+        ByteBuffer.wrap(titleBytes).asFloatBuffer().put(textVector);
+
+        byteRedisTemplate.opsForValue().set("media:video:vector:id:" + id, bytes, Duration.ofMinutes(15));
+        byteRedisTemplate.opsForValue().set("media:title:vector:id:" + id, titleBytes, Duration.ofMinutes(15));
         stringRedisTemplate.opsForValue().set("media:cover_url:id:" + id, coverPath, Duration.ofMinutes(15));
 
-        MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id));
+        MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id))
+                .with("title", title)
+                .with("userId", userId);
         mediaTransitionService.sendEvent(mediaEventContext, MediaEvent.FINISH_EXTRACTION);
     }
 
     @KafkaListener(topics = "decode-media-topic", groupId = "v-omni-media-group")
-    public void decodingTopicConsume(@NotNull String message) throws Exception {
-        String[] parts = message.split("\\|");
-        String id = parts[0];
-        String downloadUrl = parts[1];
+    public void decodingTopicConsume(@NotNull HandleMediaDto message) throws Exception {
+        String id = message.getMediaId();
+        String downloadUrl = message.getDownloadUrl();
+        String title = message.getTitle();
+        String userId = message.getUserId();
         ffmpegService.compressAndConvertToHLSAndUploadToMinio(id, downloadUrl, "final-video");
-        MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id));
+        MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id))
+                .with("title", title)
+                .with("userId", userId);
         mediaTransitionService.sendEvent(mediaEventContext, MediaEvent.FINISH_DECODING);
     }
 
     @KafkaListener(topics = "delete-media-topic", groupId = "v-omni-media-group")
-    public void deleteMediaTopicConsume(@NotNull String message) throws Exception {
-        String[] parts = message.split(":");
-        String id = parts[0];
-        String userId = parts[1];
-        Long l = mediaMapper.selectUserIdById(Long.parseLong(id));
-        if(!l.toString().equals(userId)) return;
-        documentVectorMediaService.deleteById(id);
-        mediaMapper.updateIsDeletedById(Long.parseLong(id), new Date());
-    }
-
-    @KafkaListener(topics = "pre-database-topic", groupId = "v-omni-media-group")
-    public void preDatabaseTopicConsume(@NotNull PreparePublishToMediaDto message) {
-        String id = message.getId();
+    public void deleteMediaTopicConsume(@NotNull UserIdAndMediaIdDto message) throws Exception {
+        String id = message.getMediaId();
         String userId = message.getUserId();
-        String title = message.getTitle();
-        Date date = new Date();
-        MediaPo mediaPo = new MediaPo(
-                Long.parseLong(id),
-                title,
-                Long.parseLong(userId),
-                MediaState.PREPARE_PUBLISH_MEDIA.toString(),
-                false,
-                "",
-                date,
-                date
-        );
-        mediaMapper.insertUser(mediaPo);
-    }
 
-
-    @NotNull
-    private float[] callPythonEmbeddingService(String videoId, List<String> frameObjects) {
-        String pythonUrl = "http://localhost:18001/embedding/mean_pool";
-
-        // 构建请求体
-        Map<String, Object> request = Map.of(
-                "video_id", videoId,
-                "frame_objects", frameObjects
-        );
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
-
-        RestTemplate restTemplate = new RestTemplate();
-        // 期望返回类型是 Map<String, Object>
-        Map<String, Object> response = restTemplate.postForObject(pythonUrl, entity, Map.class);
-
-        if (response == null || !response.containsKey("vector")) {
-            throw new RuntimeException("Python 服务未返回向量");
-        }
-
-        // 提取向量列表并转为 float[]
-        List<Double> vectorList = (List<Double>) response.get("vector");
-        float[] vector = new float[vectorList.size()];
-        for (int i = 0; i < vectorList.size(); i++) {
-            vector[i] = vectorList.get(i).floatValue();
-        }
-        return vector;
+        documentVectorMediaService.deleteById(id);
+        mediaMapper.updateIsDeletedByIdAndUserId(Long.parseLong(id),Long.parseLong(userId) , new Date());
     }
 
 }

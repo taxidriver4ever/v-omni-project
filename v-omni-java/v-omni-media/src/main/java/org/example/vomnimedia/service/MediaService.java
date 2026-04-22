@@ -1,10 +1,11 @@
 package org.example.vomnimedia.service;
 
 import org.example.vomnimedia.domain.statemachine.MediaState;
+import org.example.vomnimedia.vo.PreSignResponseVo;
 
 import java.util.Map;
 
 public interface MediaService {
-    Map<String,String> generatePreSignature(String title) throws Exception;
+    PreSignResponseVo generatePreSignature() throws Exception;
     void deleteMedia(String mediaId) throws Exception;
 }

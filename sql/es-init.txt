@@ -6,7 +6,7 @@ PUT /vector_media_index
     "properties": {
       "title": { "type": "text", "analyzer": "ik_max_word" },
       "author": { "type": "keyword" },
-      "avatar_path": { "type": "keyword", "index": false },     
+      "avatar_path": { "type": "keyword", "index": false },      
       "cover_path": { "type": "keyword", "index": false }, 
       "like_count": { "type": "integer" },
       "deleted": { "type": "boolean" },
@@ -18,12 +18,23 @@ PUT /vector_media_index
         "type": "date", 
         "format": "yyyy-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis" 
       },
-      "embedding": {
+      
+      // 第一路：视频画面向量 (Video content features)
+      "video_embedding": {
         "type": "dense_vector",
-        "dims": 1024,
+        "dims": 512,
         "index": true,
         "similarity": "cosine",
-        "index_options": { "type": "int8_hnsw", "m": 8, "ef_construction": 64 }
+        "index_options": { "type": "int8_hnsw", "m": 16, "ef_construction": 100 }
+      },
+      
+      // 第二路：标题文本向量 (Title semantic features)
+      "text_embedding": {
+        "type": "dense_vector",
+        "dims": 512,
+        "index": true,
+        "similarity": "cosine",
+        "index_options": { "type": "int8_hnsw", "m": 16, "ef_construction": 100 }
       }
     }
   }
@@ -95,6 +106,20 @@ PUT /user_media_comments_index
       "root_id": { "type": "long" },   // 0为主评，非0为该评论所属的根评论ID
       "parent_id": { "type": "long" }, // 被回复的评论ID
       "create_time": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||epoch_millis" }
+    }
+  }
+}
+
+DELETE /user_profile_index
+
+PUT /user_profile_index
+{
+  "mappings": {
+    "properties": {
+      "user_id": { "type": "keyword" },
+      "last_search_vectors": { "type": "dense_vector", "dims": 512 }, // 最近搜索的语义中心
+      "interest_vector": { "type": "dense_vector", "dims": 512 },    // 综合点赞收藏计算出的兴趣重心
+      "updated_at": { "type": "date" }
     }
   }
 }

@@ -2,20 +2,21 @@ package org.example.vomnimedia.service.impl;
 
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.bytedeco.javacv.FFmpegFrameGrabber;
-import org.bytedeco.javacv.FFmpegFrameRecorder;
-import org.bytedeco.javacv.Frame;
-import org.bytedeco.javacv.Java2DFrameConverter;
+import org.bytedeco.javacv.*;
 import org.example.vomnimedia.service.FfmpegService;
 import org.example.vomnimedia.service.MediaService;
 import org.example.vomnimedia.service.MinioService;
+import org.example.vomnimedia.service.VectorService;
 import org.example.vomnimedia.util.SnowflakeIdWorker;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -28,6 +29,9 @@ public class FfmpegServiceImpl implements FfmpegService {
 
     @Resource
     private MinioService minioService;
+
+    @Resource
+    private VectorService vectorService;
 
     @Override
     public void compressAndConvertToHLSAndUploadToMinio(String id,String inputVideoUrl, String bucketName, int crf, String maxBitrate) throws Exception {
@@ -52,53 +56,66 @@ public class FfmpegServiceImpl implements FfmpegService {
         log.info("HLS 已上传至 MinIO，桶: {}", bucketName);
     }
 
+    /**
+     * 抽帧并返回视频的特征向量
+     * @return 512维的 float 数组
+     */
     @Override
-    public List<String> extractFramesEveryNSeconds(String id, String inputVideoUrl, int intervalSeconds, String bucketName) throws Exception {
-        List<String> uploadedObjects = new ArrayList<>();
+    public float[] extractVideoVector(String id, String inputVideoUrl) throws Exception {
+        // 1. 准备一个内存列表，用来存放抽出来的图片字节流
+        List<byte[]> imageBytesList = new ArrayList<>();
 
         try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(inputVideoUrl)) {
             grabber.start();
 
             double frameRate = grabber.getFrameRate();
-            double durationSeconds = grabber.getLengthInTime() / 1_000_000.0; // 微秒转秒
-            int totalFrames = (int) Math.round(frameRate * durationSeconds);
+            double durationSeconds = grabber.getLengthInTime() / 1_000_000.0;
+            int totalFrames = grabber.getLengthInFrames(); // 直接获取总帧数
 
             int frameCount = 0;
             int savedCount = 0;
-            int step; // 抽帧步长（帧数间隔）
+            int step;
 
-            // 动态决定抽帧策略
+            // 抽帧策略逻辑保持不变
             if (durationSeconds < 120) {
-                // 小于2分钟：每4秒抽一帧
                 step = (int) Math.round(frameRate * 4);
-                log.info("视频时长 {} 秒 < 120，采用每4秒抽一帧，步长={}", durationSeconds, step);
             } else {
-                // 大于等于2分钟：固定抽30帧（均匀分布）
                 step = Math.max(1, totalFrames / 30);
-                log.info("视频时长 {} 秒 >= 120，采用固定抽30帧，步长={}", durationSeconds, step);
             }
 
             try (Java2DFrameConverter converter = new Java2DFrameConverter()) {
                 Frame frame;
                 while ((frame = grabber.grabImage()) != null) {
-                    // 对于固定30帧模式，抽满30帧后提前退出
+                    // 如果已经抽够了 30 帧且是大视频，提前结束
                     if (durationSeconds >= 120 && savedCount >= 30) {
                         break;
                     }
+
                     if (frameCount % step == 0) {
                         BufferedImage image = converter.getBufferedImage(frame);
-                        String objectName = String.format("frames/%s/frame_%08d.jpg", id, savedCount);
-                        minioService.uploadImage(image, bucketName, objectName);
-                        uploadedObjects.add(objectName);
-                        savedCount++;
+                        if (image != null) {
+                            // 将图片转为 byte[] 存入内存，不写磁盘，不传 MinIO
+                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                            ImageIO.write(image, "jpg", baos);
+                            imageBytesList.add(baos.toByteArray());
+                            savedCount++;
+                        }
                     }
                     frameCount++;
                 }
             }
 
-            log.info("✅ 抽帧完成，视频时长约 {} 秒，实际抽帧 {} 张，上传到桶 {}，路径前缀 frames/{}",
-                    durationSeconds, savedCount, bucketName, id);
-            return uploadedObjects;
+            if (imageBytesList.isEmpty()) {
+                throw new RuntimeException("未能从视频中抽取到任何有效帧");
+            }
+
+            log.info("🎬 视频 {} 抽帧完成，共 {} 帧，开始进入 ONNX 模型计算向量...", id, savedCount);
+
+            // 2. 调用 ONNX 服务，将多张图片转化为一个 512 维向量
+            float[] videoVector = vectorService.getVector(imageBytesList);
+
+            log.info("✅ 向量计算成功，维度: {}", videoVector.length);
+            return videoVector;
         }
     }
 

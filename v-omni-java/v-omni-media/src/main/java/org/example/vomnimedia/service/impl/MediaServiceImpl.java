@@ -11,6 +11,7 @@ import org.example.vomnimedia.service.IdentityService;
 import org.example.vomnimedia.service.MediaService;
 import org.example.vomnimedia.service.MinioService;
 import org.example.vomnimedia.util.SecurityUtils;
+import org.example.vomnimedia.vo.PreSignResponseVo;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -37,23 +38,22 @@ public class MediaServiceImpl implements MediaService {
     private KafkaTemplate<String,String> kafkaTemplate;
 
     @Override
-    public Map<String,String> generatePreSignature(String title) {
+    public PreSignResponseVo generatePreSignature() {
         Map<String, String> map = new HashMap<>();
 
         Long id = identityService.getOrCreateUserIdByEmail();
 
-        Long userId = SecurityUtils.getCurrentUserId();
-
-        MediaEventContext mediaEventContext = new MediaEventContext(id).with("userId", String.valueOf(userId)).with("title", title);
+        MediaEventContext mediaEventContext = new MediaEventContext(id);
 
         MediaState currentState = mediaTransitionService.sendEvent(mediaEventContext, MediaEvent.GET_PRE_SIGNATURE);
 
         String preSign = mediaEventContext.getString("preSign");
 
-        map.put("state", currentState.toString());
-        map.put("preSign", preSign);
-
-        return map;
+        return PreSignResponseVo.builder()
+                .mediaId(id)
+                .preSignUrl(preSign)
+                .mediaState(currentState)
+                .build();
     }
 
     @Override
