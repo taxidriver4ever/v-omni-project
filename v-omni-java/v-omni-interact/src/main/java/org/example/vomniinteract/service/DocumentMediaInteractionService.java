@@ -4,6 +4,7 @@ import org.example.vomniinteract.dto.InteractionTaskDto;
 import org.example.vomniinteract.po.DocumentMediaInteractionPo;
 import org.example.vomniinteract.vo.InteractionVo;
 import java.util.List;
+import java.util.Map;
 
 public interface DocumentMediaInteractionService {
     // --- 批量维护文档 (视频发布/下架) ---

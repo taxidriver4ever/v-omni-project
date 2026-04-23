@@ -4,10 +4,12 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomnisearch.dto.SearchHistoryDTO;
+import org.example.vomnisearch.dto.UserIdAndMediaIdDto;
+import org.example.vomnisearch.dto.UserSearchVectorDto;
 import org.example.vomnisearch.mapper.UserSearchHistoryMapper;
+import org.example.vomnisearch.po.DocumentUserProfilePo;
 import org.example.vomnisearch.po.UserSearchHistoryPo;
-import org.example.vomnisearch.service.StopWordService;
-import org.example.vomnisearch.service.DocumentVectorMediaService;
+import org.example.vomnisearch.service.*;
 import org.example.vomnisearch.util.SnowflakeIdWorker;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -16,9 +18,11 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -42,6 +46,15 @@ public class SearchConsumer {
 
     @Resource
     private UserSearchHistoryMapper userSearchHistoryMapper;
+
+    @Resource
+    private DocumentUserProfileService documentUserProfileService;
+
+    @Resource
+    private DocumentUserViewedService documentUserViewedService;
+
+    @Resource
+    private VectorService vectorService;
 
     private final static String HOT_WORDS_KEY = "hot_words:global";
 
@@ -120,6 +133,59 @@ public class SearchConsumer {
 
         // 4. 防止冷用户占用内存，设置 Key 整体过期时间（如 30 天）
         stringRedisTemplate.expire(redisKey, 30, TimeUnit.DAYS);
+    }
+
+    @KafkaListener(topics = "user-feature-update-topic", groupId = "v-omni-media-group")
+    public void userFeatureConsume(@NotNull UserSearchVectorDto userSearchVectorDto) {
+        String userId = userSearchVectorDto.getUserId();
+        byte[] vector = userSearchVectorDto.getVector();
+        Date date = userSearchVectorDto.getUpdateTime();
+        float[] currentQueryVector = bytesToFloatArray(vector);
+        try {
+            Optional<DocumentUserProfilePo> userProfile = documentUserProfileService.getUserProfile(userId);
+            if (userProfile.isPresent()) {
+                DocumentUserProfilePo profile = userProfile.get();
+
+                // --- 这就是你要找的那两个向量 ---
+                float[] oldLastSearchVector = profile.getLastSearchVector();
+                float[] oldInterestVector = profile.getInterestVector();
+
+                log.info("🔍 查到用户 {} 的历史向量，准备进行兴趣融合更新", userId);
+
+                // 3. (可选) 此时你可以调用 MLP 进行画像演化
+                float[] newInterest = vectorService.fuseUserInterest(currentQueryVector, oldLastSearchVector, oldInterestVector);
+
+                // 4. 执行更新逻辑：将 currentQueryVector 存入 lastSearchVector，将新算的存入 interestVector
+                documentUserProfileService.updateUserProfile(userId, currentQueryVector, newInterest, date);
+
+            } else {
+                log.warn("👤 用户 {} 尚未初始化画像，将进行首次写入", userId);
+                // 处理冷启动逻辑...
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @KafkaListener(topics = "handle-viewed-topic", groupId = "v-omni-media-group")
+    public void handleViewedTopic(@NotNull UserIdAndMediaIdDto userIdAndMediaIdDto) {
+        String userId = userIdAndMediaIdDto.getUserId();
+        String mediaId = userIdAndMediaIdDto.getMediaId();
+        try {
+            documentUserViewedService.saveUserViewHistory(userId,mediaId);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private float[] bytesToFloatArray(byte[] bytes) {
+        if (bytes == null) return null;
+        ByteBuffer buffer = ByteBuffer.wrap(bytes);
+        float[] floats = new float[bytes.length / 4];
+        for (int i = 0; i < floats.length; i++) {
+            floats[i] = buffer.getFloat();
+        }
+        return floats;
     }
 
 

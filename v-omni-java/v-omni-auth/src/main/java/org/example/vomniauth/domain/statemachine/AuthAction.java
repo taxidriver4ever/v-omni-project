@@ -4,6 +4,7 @@ import io.jsonwebtoken.Jwts;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.types.Field;
+import org.example.vomniauth.dto.IdAndEmailDto;
 import org.example.vomniauth.util.JwtUtils;
 import org.jetbrains.annotations.NotNull;
 import org.redisson.api.RBloomFilter;
@@ -21,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 public class AuthAction {
 
     @Resource
-    private KafkaTemplate<String, String> kafkaTemplate;
+    private KafkaTemplate<String, IdAndEmailDto> idAndEmailKafkaTemplate;
 
     private final static String AUTH_CODE_TOPIC = "auth-code-topic";
 
@@ -51,7 +52,10 @@ public class AuthAction {
     public void pendingOnRegisterVerifyCodeToVerifiedAction(@NotNull AuthEventContext authEventContext) {
         Long id = authEventContext.getId();
         String email = authEventContext.getString("email");
-        kafkaTemplate.send(INPUT_USER_INFORMATION_TOPIC, id.toString()+":"+email);
+        IdAndEmailDto idAndEmailDto = new IdAndEmailDto();
+        idAndEmailDto.setEmail(email);
+        idAndEmailDto.setId(String.valueOf(id));
+        idAndEmailKafkaTemplate.send(INPUT_USER_INFORMATION_TOPIC, idAndEmailDto);
     }
 
     public void pendingOnRegisterVerifyCodeToExceedLimitAction(@NotNull AuthEventContext authEventContext) {
@@ -95,13 +99,19 @@ public class AuthAction {
     private void loginSendCode(@NotNull AuthEventContext authEventContext) {
         Long id = authEventContext.getId();
         String email = authEventContext.getString("email");
-        kafkaTemplate.send(LOGIN_CODE_TOPIC, id.toString()+":"+email);
+        IdAndEmailDto idAndEmailDto = new IdAndEmailDto();
+        idAndEmailDto.setEmail(email);
+        idAndEmailDto.setId(String.valueOf(id));
+        idAndEmailKafkaTemplate.send(LOGIN_CODE_TOPIC, idAndEmailDto);
     }
 
     private void registerSendCode(@NotNull AuthEventContext authEventContext) {
         Long id = authEventContext.getId();
         String email = authEventContext.getString("email");
-        kafkaTemplate.send(AUTH_CODE_TOPIC, id.toString()+":"+email);
+        IdAndEmailDto idAndEmailDto = new IdAndEmailDto();
+        idAndEmailDto.setEmail(email);
+        idAndEmailDto.setId(String.valueOf(id));
+        idAndEmailKafkaTemplate.send(AUTH_CODE_TOPIC, idAndEmailDto);
     }
 
 }

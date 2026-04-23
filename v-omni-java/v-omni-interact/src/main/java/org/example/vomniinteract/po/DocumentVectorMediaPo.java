@@ -1,4 +1,4 @@
-package org.example.vomnisearch.po;
+package org.example.vomniinteract.po;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;

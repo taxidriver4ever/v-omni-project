@@ -5,6 +5,7 @@ import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.json.JsonData;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomniinteract.po.DocumentMediaInteractionPo;
 import org.example.vomniinteract.service.DocumentMediaInteractionService;
@@ -25,7 +26,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DocumentMediaInteractionServiceImpl implements DocumentMediaInteractionService {
 
-    @Autowired
+    @Resource
     private ElasticsearchClient client;
 
     @Value("${minio.base-url}")

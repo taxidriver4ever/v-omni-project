@@ -55,6 +55,9 @@ spring:
           ssl:
             enable: true
 
+  elasticsearch:
+    uris: http://localhost:19200
+
 minio:
   endpoint: http://localhost:9000
   access-key: admin

@@ -6,13 +6,17 @@ import org.example.vomnisearch.common.MyResult;
 import org.example.vomnisearch.dto.SearchHistoryDTO;
 import org.example.vomnisearch.dto.SearchMediaRequestDto;
 import org.example.vomnisearch.dto.UserContent;
+import org.example.vomnisearch.dto.UserIdAndMediaIdDto;
 import org.example.vomnisearch.po.DocumentHotWordsPo;
 import org.example.vomnisearch.service.*;
 import org.example.vomnisearch.util.SecurityUtils;
+import org.example.vomnisearch.vo.RecommendMediaVo;
 import org.example.vomnisearch.vo.SearchMediaVo;
+import org.redisson.api.RBloomFilter;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.util.List;
 
 @CrossOrigin(maxAge = 3600)
@@ -25,6 +29,18 @@ public class SearchController {
 
     @Resource
     private DocumentHotWordsService documentHotWordsService;
+
+    @Resource
+    private UserRecommendationRedisService redisService;
+
+    @Resource
+    private UserBloomFilterService userBloomFilterService;
+
+    @Resource
+    private KafkaTemplate<String, UserIdAndMediaIdDto> userIdAndMediaIdDtoKafkaTemplate;
+
+    @Resource
+    private DocumentVectorMediaService documentVectorMediaService;
 
     @PostMapping("/hybrid/video")
     public MyResult<List<SearchMediaVo>> searchVideo(@RequestBody SearchMediaRequestDto searchMediaRequestDto,
@@ -68,6 +84,29 @@ public class SearchController {
     public MyResult<String> clearAll() {
         String userId = String.valueOf(SecurityUtils.getCurrentUserId());
         searchService.clearAllHistory(userId);
+        return MyResult.success();
+    }
+
+    @GetMapping("/recommend/media")
+    public MyResult<List<RecommendMediaVo>> getRecommendMedia(HttpServletRequest httpServletRequest) {
+        List<RecommendMediaVo> recommendMedia = searchService.getRecommendMedia(httpServletRequest);
+        if(recommendMedia == null || recommendMedia.isEmpty()) return MyResult.success();
+        return MyResult.success(recommendMedia);
+    }
+
+    @PostMapping("/leave/video")
+    public MyResult<Void> collectLeaveVideo(String mediaId) throws IOException {
+        if(mediaId == null || mediaId.isEmpty()) return MyResult.error(404,"没有该视频");
+        boolean available = documentVectorMediaService.availableMedia(mediaId);
+        if(!available) return MyResult.error(404,"没有该视频");
+        String userId = String.valueOf(SecurityUtils.getCurrentUserId());
+        redisService.addSeenIdToZSet(userId, mediaId);
+        RBloomFilter<String> bloomFilter = userBloomFilterService.getFilter(Long.valueOf(userId));
+        bloomFilter.add(mediaId);
+        UserIdAndMediaIdDto userIdAndMediaIdDto = new UserIdAndMediaIdDto();
+        userIdAndMediaIdDto.setUserId(userId);
+        userIdAndMediaIdDto.setMediaId(mediaId);
+        userIdAndMediaIdDtoKafkaTemplate.send("handle-viewed-topic", userIdAndMediaIdDto);
         return MyResult.success();
     }
 

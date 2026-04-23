@@ -1,6 +1,7 @@
 package org.example.vomniinteract.service.impl;
 
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.example.vomniinteract.dto.*;
 import org.example.vomniinteract.mapper.CollectionMapper;
 import org.example.vomniinteract.mapper.CommentLikeMapper;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @Service
 public class InteractServiceImpl implements InteractService {
 
@@ -52,6 +54,13 @@ public class InteractServiceImpl implements InteractService {
 
     @Resource
     private CollectionMapper collectionMapper; // 记得加上这个注入
+
+    @Resource
+    private DefaultRedisScript<Long> userSlidingWindowScript;
+
+    // 用户兴趣滑动窗口的 Key 前缀
+    private final static String USER_VECTOR_WINDOW_PREFIX = "user:vector_sequence:";
+    private final static int WINDOW_SIZE = 15;
 
     private final static String MEDIA_LIKE_COUNTS_PREFIX = "interact:like:counts:media_id:";
     private final static String MEDIA_LIKE_USER_ID_SET_PREFIX = "interact:like:set:media_id:";
@@ -134,6 +143,7 @@ public class InteractServiceImpl implements InteractService {
                 new Date()
         );
         commentKafkaTemplate.send("database-comment-topic", doCommentDto);
+        updateUserInterestWindow(userId, commentDto.getMediaId(), "1", "comment");
         return 1L;
     }
 
@@ -151,6 +161,7 @@ public class InteractServiceImpl implements InteractService {
                 new Date()
         );
         commentKafkaTemplate.send("database-comment-topic", doCommentDto);
+        updateUserInterestWindow(userId, commentDto.getMediaId(), "0", "comment");
         return 1L;
     }
 
@@ -250,6 +261,34 @@ public class InteractServiceImpl implements InteractService {
             // 新增：评论点赞发送逻辑
             commentLikeKafkaTemplate.send(topic, new DoCommentLikeDto(String.valueOf(userId), mediaId, action, now));
         }
+
+        if (!"comment_like".equals(type)) {
+            updateUserInterestWindow(userId, mediaId, action, type);
+        }
+    }
+
+    /**
+     * 更新用户行为滑动窗口
+     */
+    private void updateUserInterestWindow(Long userId, String mediaId, String action, String type) {
+        // 1. 构造存储内容：video_id:action_type (例如 "12345:like")
+        // 如果是取消操作(action=0)，可以存储 "12345:cancel_like"
+        String actionTag = "1".equals(action) ? type : "cancel_" + type;
+        String actionData = mediaId + ":" + actionTag;
+
+        String userWindowKey = USER_VECTOR_WINDOW_PREFIX + userId;
+
+        // 2. 执行你的滑动窗口 Lua 脚本
+        // 对应你之前给出的 Lua 逻辑：LPUSH + LTRIM
+        stringRedisTemplate.execute(
+                userSlidingWindowScript,
+                List.of(userWindowKey),
+                mediaId,
+                actionTag,
+                String.valueOf(WINDOW_SIZE)
+        );
+
+        log.debug("更新用户{}兴趣窗口: {}", userId, actionData);
     }
 
 }

@@ -6,9 +6,9 @@ PUT /vector_media_index
     "properties": {
       "title": { "type": "text", "analyzer": "ik_max_word" },
       "author": { "type": "keyword" },
+      "author_id": { "type": "long" }, // 新增：方便后续跳转主页
       "avatar_path": { "type": "keyword", "index": false },      
       "cover_path": { "type": "keyword", "index": false }, 
-      "like_count": { "type": "integer" },
       "deleted": { "type": "boolean" },
       "create_time": { 
         "type": "date", 
@@ -19,7 +19,11 @@ PUT /vector_media_index
         "format": "yyyy-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis" 
       },
       
-      // 第一路：视频画面向量 (Video content features)
+      // 计数类字段（存快照，实时值从 Redis 拿）
+      "like_count": { "type": "integer" },
+      "comment_count": { "type": "integer" }, // 新增
+      "collect_count": { "type": "integer" }, // 新增
+      
       "video_embedding": {
         "type": "dense_vector",
         "dims": 512,
@@ -27,8 +31,6 @@ PUT /vector_media_index
         "similarity": "cosine",
         "index_options": { "type": "int8_hnsw", "m": 16, "ef_construction": 100 }
       },
-      
-      // 第二路：标题文本向量 (Title semantic features)
       "text_embedding": {
         "type": "dense_vector",
         "dims": 512,
@@ -110,6 +112,7 @@ PUT /user_media_comments_index
   }
 }
 
+
 DELETE /user_profile_index
 
 PUT /user_profile_index
@@ -117,9 +120,37 @@ PUT /user_profile_index
   "mappings": {
     "properties": {
       "user_id": { "type": "keyword" },
-      "last_search_vectors": { "type": "dense_vector", "dims": 512 }, // 最近搜索的语义中心
-      "interest_vector": { "type": "dense_vector", "dims": 512 },    // 综合点赞收藏计算出的兴趣重心
-      "updated_at": { "type": "date" }
+      "last_search_vectors": { 
+        "type": "dense_vector", 
+        "dims": 512, 
+        "index": false  // 仅存储，不检索
+      },
+      "interest_vector": { 
+        "type": "dense_vector", 
+        "dims": 512, 
+        "index": true, 
+        "similarity": "cosine" // 用于后续的个性化推荐
+      },
+      "updated_time": { "type": "date" }
+    }
+  }
+}
+
+DELETE /user_behavior_history_index
+
+PUT /user_view_history_index
+{
+  "mappings": {
+    "properties": {
+      "user_id": { "type": "keyword" },
+      "media_id": { "type": "keyword" },
+      "create_time": { "type": "date" },
+      // 存一下当时产生这条记录的向量，它是你“雪球”演化的燃料
+      "view_vector": {
+        "type": "dense_vector",
+        "dims": 512,
+        "index": false 
+      }
     }
   }
 }

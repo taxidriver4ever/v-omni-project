@@ -3,8 +3,10 @@ package org.example.vomniauth.consumer;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomniauth.domain.statemachine.AuthState;
+import org.example.vomniauth.dto.IdAndEmailDto;
 import org.example.vomniauth.mapper.UserMapper;
 import org.example.vomniauth.po.UserPo;
+import org.example.vomniauth.service.DocumentUserProfileService;
 import org.example.vomniauth.service.MailService;
 import org.example.vomniauth.util.SnowflakeIdWorker;
 import org.example.vomniauth.util.UsernameGenerator;
@@ -14,6 +16,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
 import java.util.Random;
@@ -77,14 +80,17 @@ public class AuthCodeConsumer {
     @Resource
     private RBloomFilter<String> emailBloomFilter;
 
+    @Resource
+    private DocumentUserProfileService documentUserProfileService;
+
     private final static int REGISTERED_TTL = 60 * 60;
 
     private final static int VERIFICATION_EXPIRE_TIME = 60 * 5;
 
     @KafkaListener(topics = "auth-code-topic", groupId = "v-omni-auth-group")
-    public void authCodeTopicConsume(@NotNull String idAndEmail) {
-        String id = idAndEmail.split(":")[0];
-        String email = idAndEmail.split(":")[1];
+    public void authCodeTopicConsume(@NotNull IdAndEmailDto idAndEmailDto) {
+        String id = idAndEmailDto.getId();
+        String email = idAndEmailDto.getEmail();
         log.info("注册收到 Kafka 邮件任务: {}", email);
 
         StringBuilder code = new StringBuilder();
@@ -112,9 +118,9 @@ public class AuthCodeConsumer {
     }
 
     @KafkaListener(topics = "login-code-topic", groupId = "v-omni-auth-group")
-    public void loginCodeTopicConsume(@NotNull String idAndEmail) {
-        String id = idAndEmail.split(":")[0];
-        String email = idAndEmail.split(":")[1];
+    public void loginCodeTopicConsume(@NotNull IdAndEmailDto idAndEmailDto) {
+        String id = idAndEmailDto.getId();
+        String email = idAndEmailDto.getEmail();
         log.info("登录收到 Kafka 邮件任务: {}", email);
 
         StringBuilder code = new StringBuilder();
@@ -141,18 +147,22 @@ public class AuthCodeConsumer {
         }
     }
 
+    @Transactional
     @KafkaListener(topics = "input-user-information-topic", groupId = "v-omni-auth-group")
-    public void inputUserInformationTopicConsume(@NotNull String idAndEmail) {
-        String idString = idAndEmail.split(":")[0];
-
-        long id = Long.parseLong(idString);
-        String email = idAndEmail.split(":")[1];
+    public void inputUserInformationTopicConsume(@NotNull IdAndEmailDto idAndEmailDto) {
+        String idString = idAndEmailDto.getId();
+        String email = idAndEmailDto.getEmail();
+        Long id = Long.valueOf(idString);
         String username = UsernameGenerator.generateRandomName();
         UserPo user = new UserPo(id,username,email,AuthState.REGISTERED);
-        user.setCreateTime(new Date());
-        user.setUpdateTime(new Date());
+        user.setAvatarPath("default-avatar.png");
+        Date now = new Date();
+        user.setCreateTime(now);
+        user.setUpdateTime(now);
 
         int i = userMapper.insertUser(user);
+        documentUserProfileService.createProfileOnRegistration(idString,now);
+
         if(i == 0)
             log.info("邮箱{}sql插入错误", email);
         else if(i == 1) {

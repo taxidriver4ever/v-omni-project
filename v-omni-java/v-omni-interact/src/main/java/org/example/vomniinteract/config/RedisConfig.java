@@ -55,4 +55,12 @@ public class RedisConfig {
         redisScript.setResultType(Long.class);
         return redisScript;
     }
+
+    @Bean
+    public DefaultRedisScript<Long> userSlidingWindowScript() {
+        DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
+        redisScript.setLocation(new ClassPathResource("lua/user_sliding_window_update.lua"));
+        redisScript.setResultType(Long.class);
+        return redisScript;
+    }
 }

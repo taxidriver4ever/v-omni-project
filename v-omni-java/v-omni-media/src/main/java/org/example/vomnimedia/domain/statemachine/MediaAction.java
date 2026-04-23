@@ -115,7 +115,11 @@ public class MediaAction {
         List<Float> titleVector = convertToList(titleVectorRaw);
 
         // 3. 调用代理方法执行事务
-        self.executePersistentTask(id, userId, title, videoVector, titleVector, coverPath);
+        try {
+            self.executePersistentTask(id, userId, title, videoVector, titleVector, coverPath);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     // 提取一个通用的转换方法
@@ -134,7 +138,7 @@ public class MediaAction {
     public void executePersistentTask(Long id, String userId, String title,
                                       List<Float> videoVector,
                                       List<Float> titleVector,
-                                      String coverPath) {
+                                      String coverPath) throws IOException {
 
         // 1. MySQL 操作：查询作者
         AvatarAndAuthorDto avatarAndAuthorDto = userMapper.selectAvatarAndAuthorByUserId(Long.parseLong(userId));
@@ -154,6 +158,9 @@ public class MediaAction {
         documentVectorMediaPo.setAvatarPath(avatar);
         documentVectorMediaPo.setCoverPath(coverPath);
         documentVectorMediaPo.setLikeCount(0);
+        documentVectorMediaPo.setCollectionCount(0);
+        documentVectorMediaPo.setCommentCount(0);
+        documentVectorMediaPo.setUserId(userId);
         documentVectorMediaPo.setDeleted(false);
         documentVectorMediaPo.setCreateTime(updateDate);
         documentVectorMediaPo.setUpdateTime(updateDate);
@@ -171,15 +178,10 @@ public class MediaAction {
         mediaPo.setUpdateTime(updateDate);
         mediaPo.setState(MediaState.FINISHED.toString());
         mediaPo.setUserId(Long.parseLong(userId));
-        mediaMapper.insertUser(mediaPo); // 确保你的 Mapper 能够处理插入
 
-        // 4. ES 操作：触发同步
-        try {
-            documentVectorMediaService.upsert(documentVectorMediaPo);
-        } catch (IOException e) {
-            log.error("ES同步失败，准备回滚MySQL事务。视频ID: {}", id);
-            throw new RuntimeException("ES写入异常，系统执行事务回滚", e);
-        }
+
+        mediaMapper.insertUser(mediaPo); // 确保你的 Mapper 能够处理插入
+        documentVectorMediaService.upsert(documentVectorMediaPo);
     }
 
     private float[] getVideoVectorFromRedis(@NotNull String id) {

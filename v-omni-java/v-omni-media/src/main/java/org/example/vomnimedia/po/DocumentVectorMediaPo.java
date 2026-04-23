@@ -19,6 +19,8 @@ public class DocumentVectorMediaPo {
 
     private String author;
 
+    private String userId;
+
     private Boolean deleted;
 
     private List<Float> videoEmbedding; // 存放视频画面向量
@@ -30,6 +32,10 @@ public class DocumentVectorMediaPo {
     private String coverPath;
 
     private Integer likeCount;
+
+    private Integer commentCount;
+
+    private Integer collectionCount;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
     private Date createTime;

@@ -4,20 +4,20 @@ import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.example.vomnisearch.dto.SearchHistoryDTO;
 import org.example.vomnisearch.dto.SearchMediaRequestDto;
-import org.example.vomnisearch.service.EmbeddingService;
-import org.example.vomnisearch.service.MinioService;
-import org.example.vomnisearch.service.SearchService;
-import org.example.vomnisearch.service.DocumentVectorMediaService;
+import org.example.vomnisearch.dto.UserSearchVectorDto;
+import org.example.vomnisearch.service.*;
+import org.example.vomnisearch.util.VectorUtil;
+import org.example.vomnisearch.vo.RecommendMediaVo;
 import org.example.vomnisearch.vo.SearchMediaVo;
 import org.jetbrains.annotations.NotNull;
+import org.redisson.api.RBloomFilter;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -29,7 +29,7 @@ public class SearchServiceImpl implements SearchService {
     private DocumentVectorMediaService documentVectorMediaService;
 
     @Resource
-    private EmbeddingService embeddingService;
+    private VectorService vectorService;
 
     @Resource
     private MinioService minioService;
@@ -43,9 +43,20 @@ public class SearchServiceImpl implements SearchService {
     @Resource
     private KafkaTemplate<String, SearchHistoryDTO> searchHistoryDTOKafkaTemplate;
 
+    @Resource
+    private DocumentUserProfileService documentUserProfileService;
+
+    @Resource
+    private KafkaTemplate<String, UserSearchVectorDto> userSearchVectorKafkaTemplate;
+
+    @Resource
+    private UserBloomFilterService userBloomFilterService;
+
     private static final String HISTORY_PREFIX = "search:keyword:user_id:";
 
     private final static String USER_HISTORY_TOPIC = "user-history-topic";
+
+    private final static String USER_FEATURE_UPDATE_TOPIC = "user-feature-update-topic";
 
     @Override
     public List<SearchMediaVo> searchVideo(@NotNull SearchMediaRequestDto searchMediaRequestDto,
@@ -64,12 +75,11 @@ public class SearchServiceImpl implements SearchService {
 
         kafkaTemplate.send(HOT_WORD_TOPIC,content);
 
-        float[][] vector = embeddingService.getVector(content);
-        if (vector == null || vector.length == 0) {
-            return Collections.emptyList();
-        }
+        float[] vector = vectorService.getTextVector(content);
 
-        List<SearchMediaVo> searchMediaVos = documentVectorMediaService.hybridSearch(content, vector[0], page, 10);
+        if(vector == null) return Collections.emptyList();
+
+        List<SearchMediaVo> searchMediaVos = documentVectorMediaService.hybridSearch(content, vector, page, 10);
         if(searchMediaVos == null || searchMediaVos.isEmpty()) return Collections.emptyList();
         for (SearchMediaVo searchMediaVo : searchMediaVos) {
             String string = searchMediaVo.getMediaId();
@@ -83,6 +93,16 @@ public class SearchServiceImpl implements SearchService {
             stringRedisTemplate.opsForValue().setIfAbsent(urlKey, s, 29, TimeUnit.MINUTES);
             searchMediaVo.setMediaUrl(s);
         }
+        ByteBuffer buffer = ByteBuffer.allocate(vector.length * 4);
+        for (float f : vector) buffer.putFloat(f);
+        byte[] array = buffer.array();
+
+        UserSearchVectorDto userSearchVectorDto = new UserSearchVectorDto();
+        userSearchVectorDto.setVector(array);
+        userSearchVectorDto.setUserId(String.valueOf(userId));
+        userSearchVectorDto.setUpdateTime(new Date());
+
+        userSearchVectorKafkaTemplate.send(USER_FEATURE_UPDATE_TOPIC, userSearchVectorDto);
         return searchMediaVos;
     }
 
@@ -112,5 +132,28 @@ public class SearchServiceImpl implements SearchService {
     public void clearAllHistory(String userId) {
         // 直接删除整个 ZSet
         stringRedisTemplate.delete(HISTORY_PREFIX + userId);
+    }
+
+    @Override
+    public List<RecommendMediaVo> getRecommendMedia(HttpServletRequest request) {
+        Object currentUserId = request.getAttribute("current_user_id");
+        if(currentUserId == null) {
+            try {
+                return documentVectorMediaService.recommendRandom(14);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        else {
+            String userId = (String) currentUserId;
+            RBloomFilter<String> userFilter = userBloomFilterService.getFilter(Long.valueOf(userId));
+            try {
+                float[] userInterestVector = documentUserProfileService.getUserInterestVector(userId);
+
+                return documentVectorMediaService.recommendByInterest(userInterestVector,14, userFilter, userId);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 }
