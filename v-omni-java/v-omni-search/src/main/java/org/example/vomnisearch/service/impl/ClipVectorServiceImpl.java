@@ -7,27 +7,21 @@ import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomnisearch.service.VectorService;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
-
-import javax.imageio.ImageIO;
-import java.awt.*;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.InputStream;
 import java.nio.FloatBuffer;
 import java.nio.LongBuffer;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Slf4j
 @Service
 public class ClipVectorServiceImpl implements VectorService, AutoCloseable {
+
+    @Value("${v-omni.model-path}")
+    private String modelPath;
 
     private OrtEnvironment env;
     private OrtSession session;
@@ -41,21 +35,21 @@ public class ClipVectorServiceImpl implements VectorService, AutoCloseable {
     @PostConstruct
     public void init() {
         try {
+            log.info("🔍 初始化 CLIP 向量服务...");
+            File modelFile = new File(modelPath);
+            if (!modelFile.exists()) throw new RuntimeException("模型文件缺失: " + modelPath);
+
             this.env = OrtEnvironment.getEnvironment();
-            // 确保模型文件在 src/main/resources/models/ 目录下
-            ClassPathResource resource = new ClassPathResource("models/clip_mean_pool.onnx");
-            File tempFile = File.createTempFile("clip_combined_model", ".onnx");
-            try (InputStream is = resource.getInputStream()) {
-                Files.copy(is, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
-
             OrtSession.SessionOptions options = new OrtSession.SessionOptions();
-            // options.addCUDA(0); // 如果服务器有 GPU 且装了相应的 onnxruntime-gpu 依赖，可以开启加速
 
-            this.session = env.createSession(tempFile.getAbsolutePath(), options);
+            // 调试建议：先注释掉 addCUDA 以确认能用 CPU 启动
+//             options.addCUDA(0);
+
+            options.setIntraOpNumThreads(4);
+
             this.tokenizer = HuggingFaceTokenizer.newInstance("openai/clip-vit-base-patch32");
-            log.info("✅ Search 服务：集成化 CLIP ONNX 模型加载成功 (Vision + Text + UserTower)");
-            tempFile.deleteOnExit();
+            this.session = env.createSession(modelPath, options);
+            log.info("✅ 模型加载成功");
         } catch (Exception e) {
             log.error("❌ Search 服务：CLIP 模型加载失败", e);
             throw new RuntimeException(e);

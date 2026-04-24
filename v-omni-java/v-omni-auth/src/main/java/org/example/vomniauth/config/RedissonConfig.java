@@ -12,7 +12,6 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RedissonConfig {
 
-    // 从配置文件读取 Redis 连接信息
     @Value("${spring.data.redis.host:localhost}")
     private String redisHost;
 
@@ -22,9 +21,10 @@ public class RedissonConfig {
     @Value("${spring.data.redis.database:0}")
     private int redisDatabase;
 
-    /**
-     * 创建 RedissonClient 基础 Bean（必须！）
-     */
+    // 1. 新增密码字段映射
+    @Value("${spring.data.redis.password:}")
+    private String redisPassword;
+
     @Bean(destroyMethod = "shutdown")
     public RedissonClient redissonClient() {
         Config config = new Config();
@@ -33,7 +33,8 @@ public class RedissonConfig {
         config.useSingleServer()
                 .setAddress(address)
                 .setDatabase(redisDatabase)
-                // 调低连接池大小，避免资源占用过多（生产环境按需调整）
+                // 2. 只有当密码不为空时才设置，避免连接没有密码的 Redis 时报错
+                .setPassword(redisPassword.isBlank() ? null : redisPassword)
                 .setConnectionPoolSize(24)
                 .setConnectionMinimumIdleSize(8)
                 .setIdleConnectionTimeout(30000);

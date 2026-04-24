@@ -31,20 +31,15 @@ public class MediaTransitionService {
         try (InputStream is = getClass().getClassLoader().getResourceAsStream("lua/send_event.lua")) {
             String lua = new String(Objects.requireNonNull(is).readAllBytes(), StandardCharsets.UTF_8);
 
-            // 使用 RedisTemplate 执行 FUNCTION LOAD REPLACE
             String result = stringRedisTemplate.execute((RedisCallback<String>) connection -> {
-                byte[] scriptBytes = lua.getBytes(StandardCharsets.UTF_8);
-                byte[] response = (byte[]) connection.execute(
+                // 强制尝试发送原生命令
+                Object response = connection.execute(
                         "FUNCTION",
                         "LOAD".getBytes(StandardCharsets.UTF_8),
                         "REPLACE".getBytes(StandardCharsets.UTF_8),
-                        scriptBytes
+                        lua.getBytes(StandardCharsets.UTF_8)
                 );
-                if (response != null) {
-                    log.info("lua脚本加载成功");
-                    return new String(response, StandardCharsets.UTF_8);
-                }
-                return null;
+                return response != null ? "SUCCESS" : "FAIL";
             });
             log.info("Lua 函数库加载完成，SHA: {}", result);
         } catch (IOException e) {

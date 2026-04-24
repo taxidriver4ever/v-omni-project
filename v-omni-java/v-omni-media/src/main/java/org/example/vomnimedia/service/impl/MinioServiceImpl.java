@@ -18,10 +18,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.ZonedDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -252,6 +249,46 @@ public class MinioServiceImpl implements MinioService {
                         .build()
         );
         log.info("文件已删除 → 桶: {}, 对象: {}", bucketName, objectName);
+    }
+
+    @Override
+    public void deleteDirectory(String bucketName, String prefix) throws Exception {
+        // 1. 获取该路径（前缀）下的所有文件
+        Iterable<Result<Item>> results = minioClient.listObjects(
+                ListObjectsArgs.builder()
+                        .bucket(bucketName)
+                        .prefix(prefix) // 例如 "hls/173075377504260096/"
+                        .recursive(true) // 递归查找所有子文件
+                        .build()
+        );
+
+        // 2. 构造删除列表
+        List<DeleteObject> objectsToDelete = new ArrayList<>();
+        for (Result<Item> result : results) {
+            Item item = result.get();
+            objectsToDelete.add(new DeleteObject(item.objectName()));
+        }
+
+        if (objectsToDelete.isEmpty()) {
+            log.info("文件夹 {} 为空，无需删除", prefix);
+            return;
+        }
+
+        // 3. 执行批量删除
+        Iterable<Result<DeleteError>> deleteResults = minioClient.removeObjects(
+                RemoveObjectsArgs.builder()
+                        .bucket(bucketName)
+                        .objects(objectsToDelete)
+                        .build()
+        );
+
+        // 4. 检查是否有删除错误
+        for (Result<DeleteError> result : deleteResults) {
+            DeleteError error = result.get();
+            log.error("删除文件 {} 失败: {}", error.objectName(), error.message());
+        }
+
+        log.info("✅ 已清空并删除文件夹: {}/{}", bucketName, prefix);
     }
 
     @Override

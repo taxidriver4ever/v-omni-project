@@ -84,6 +84,9 @@ public class AuthController {
             case ERROR -> {
                 return MyResult.error(429,"系统繁忙");
             }
+            case LOGGED_IN -> {
+                return MyResult.error(400,"请求用户已登录");
+            }
             default -> {
                 return MyResult.error(404,"请求用户尚无注册");
             }
@@ -120,7 +123,7 @@ public class AuthController {
         }
     }
 
-    @GetMapping("/logout")
+    @DeleteMapping("/logout")
     public MyResult<String> logout(HttpServletResponse response,
                                    @RequestHeader("Authorization") String authHeader) {
         String accessToken = authHeader.replace("Bearer ", "");

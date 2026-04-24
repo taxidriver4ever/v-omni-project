@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.vomniinteract.util.JwtUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,6 +30,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Resource
     private JwtUtils jwtUtils;
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -52,6 +56,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (!"access_token".equals(tokenType)) {
                 sendUnauthorizedError(response, "无效的令牌类型");
                 return;
+            }
+
+            String id = claims.getId();
+            if (stringRedisTemplate.opsForValue().get("blacklist:access_token:"+id) != null)
+            {
+                // 不要直接 throw 裸类，手动抛出异常或直接调用错误处理函数
+                log.warn("检测到黑名单 Token: {}", id);
+                sendUnauthorizedError(response, "该令牌已失效，请重新登录");
+                return; // 记得 return，阻止过滤器链继续向下走
             }
 
             // 5. 提取用户信息并构建认证对象

@@ -1,4 +1,4 @@
-package org.example.vomnimedia.filter;
+package org.example.vomniauth.filter;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -9,7 +9,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.example.vomnimedia.util.JwtUtils;
+import org.example.vomniauth.util.JwtUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.redis.core.StringRedisTemplate;

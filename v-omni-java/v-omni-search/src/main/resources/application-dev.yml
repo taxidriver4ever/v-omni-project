@@ -14,6 +14,8 @@ spring:
           min-idle: 5
           max-wait: 1000ms
           time-between-eviction-runs: 30s
+      password: ${V_OMNI_REDIS_PASSWORD}
+      username: ${V_OMNI_REDIS_USERNAME}
 
   # Kafka（关键修复点）
   kafka:
@@ -23,7 +25,7 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
       retries: 3
     consumer:
-      group-id: v-omni-auth-group
+      group-id: v-omni-search-group
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer

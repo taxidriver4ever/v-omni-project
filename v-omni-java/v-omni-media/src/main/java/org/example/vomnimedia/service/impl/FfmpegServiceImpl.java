@@ -4,24 +4,19 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.bytedeco.javacv.*;
 import org.example.vomnimedia.service.FfmpegService;
-import org.example.vomnimedia.service.MediaService;
 import org.example.vomnimedia.service.MinioService;
 import org.example.vomnimedia.service.VectorService;
-import org.example.vomnimedia.util.SnowflakeIdWorker;
 import org.jetbrains.annotations.NotNull;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Slf4j
 @Service
@@ -34,189 +29,120 @@ public class FfmpegServiceImpl implements FfmpegService {
     private VectorService vectorService;
 
     @Override
-    public void compressAndConvertToHLSAndUploadToMinio(String id,String inputVideoUrl, String bucketName, int crf, String maxBitrate) throws Exception {
-        // 1. 创建临时目录
-        Path tempDir = Files.createTempDirectory("hls_temp_");
+    public void compressAndConvertToHLSAndUploadToMinio(String id, String inputVideoUrl, String bucketName, int crf, String maxBitrate) throws Exception {
+        Path tempDir = Files.createTempDirectory("hls_temp_" + id);
         String tempDirPath = tempDir.toString();
 
-        // 2. 调用原有方法转码到临时目录
-        String localM3u8Path = compressAndConvertToHLS(inputVideoUrl, tempDirPath, crf, maxBitrate);
-        File localM3u8File = new File(localM3u8Path);
-        if (!localM3u8File.exists()) {
-            throw new RuntimeException("HLS 转码失败，未生成 m3u8 文件");
+        try {
+            String localM3u8Path = compressAndConvertToHLS(inputVideoUrl, tempDirPath, crf, maxBitrate);
+            String remotePrefix = "hls/" + id + "/";
+            minioService.uploadDirectory(new File(tempDirPath), bucketName, remotePrefix);
+            log.info("✅ HLS 转码并上传完成，ID: {}", id);
+        } finally {
+            deleteDirectory(tempDir.toFile());
         }
-
-        // 3. 生成远程对象名前缀（如 "hls/uuid/"），确保唯一性
-        String remotePrefix = "hls/" + id + "/";
-        minioService.uploadDirectory(tempDir.toFile(), bucketName, remotePrefix);
-
-        // 5. 清理本地临时目录
-        deleteDirectory(tempDir.toFile());
-
-        log.info("HLS 已上传至 MinIO，桶: {}", bucketName);
     }
 
     /**
-     * 抽帧并返回视频的特征向量
-     * @return 512维的 float 数组
+     * 极速抽帧：使用 setTimestamp 进行秒级跳跃，配合 GPU 解码
      */
     @Override
     public float[] extractVideoVector(String id, String inputVideoUrl) throws Exception {
-        // 1. 准备一个内存列表，用来存放抽出来的图片字节流
         List<byte[]> imageBytesList = new ArrayList<>();
 
         try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(inputVideoUrl)) {
+            // 开启 GPU 解码加速读取
+            grabber.setVideoOption("hwaccel", "cuda");
             grabber.start();
 
-            double frameRate = grabber.getFrameRate();
-            double durationSeconds = grabber.getLengthInTime() / 1_000_000.0;
-            int totalFrames = grabber.getLengthInFrames(); // 直接获取总帧数
+            long totalDurationUs = grabber.getLengthInTime();
+            double durationSeconds = totalDurationUs / 1_000_000.0;
 
-            int frameCount = 0;
-            int savedCount = 0;
-            int step;
+            // 抽帧策略：短视频每4秒1帧，长视频固定30帧
+            int targetCount = (durationSeconds < 120) ? (int) Math.max(1, durationSeconds / 4) : 30;
+            long interval = totalDurationUs / targetCount;
 
-            // 抽帧策略逻辑保持不变
-            if (durationSeconds < 120) {
-                step = (int) Math.round(frameRate * 4);
-            } else {
-                step = Math.max(1, totalFrames / 30);
-            }
+            log.info("🎬 开始抽帧: {}，时长 {}s，预取 {} 张", id, String.format("%.2f", durationSeconds), targetCount);
 
             try (Java2DFrameConverter converter = new Java2DFrameConverter()) {
-                Frame frame;
-                while ((frame = grabber.grabImage()) != null) {
-                    // 如果已经抽够了 30 帧且是大视频，提前结束
-                    if (durationSeconds >= 120 && savedCount >= 30) {
-                        break;
-                    }
-
-                    if (frameCount % step == 0) {
+                for (int i = 0; i < targetCount; i++) {
+                    // 核心加速点：跳跃定位
+                    grabber.setTimestamp(i * interval);
+                    Frame frame = grabber.grabImage();
+                    if (frame != null) {
                         BufferedImage image = converter.getBufferedImage(frame);
                         if (image != null) {
-                            // 将图片转为 byte[] 存入内存，不写磁盘，不传 MinIO
                             ByteArrayOutputStream baos = new ByteArrayOutputStream();
                             ImageIO.write(image, "jpg", baos);
                             imageBytesList.add(baos.toByteArray());
-                            savedCount++;
                         }
                     }
-                    frameCount++;
                 }
             }
 
-            if (imageBytesList.isEmpty()) {
-                throw new RuntimeException("未能从视频中抽取到任何有效帧");
-            }
+            if (imageBytesList.isEmpty()) throw new RuntimeException("未能提取到有效视频帧");
 
-            log.info("🎬 视频 {} 抽帧完成，共 {} 帧，开始进入 ONNX 模型计算向量...", id, savedCount);
-
-            // 2. 调用 ONNX 服务，将多张图片转化为一个 512 维向量
-            float[] videoVector = vectorService.getVector(imageBytesList);
-
-            log.info("✅ 向量计算成功，维度: {}", videoVector.length);
-            return videoVector;
+            log.info("🚀 抽帧完成，进入向量化阶段...");
+            return vectorService.getVector(imageBytesList);
         }
     }
 
-    private void deleteDirectory(@NotNull File dir) {
-        if (dir.isDirectory()) {
-            File[] children = dir.listFiles();
-            if (children != null) {
-                for (File child : children) {
-                    deleteDirectory(child);
-                }
-            }
-        }
-        boolean deleted = dir.delete();
-        if (!deleted) {
-            log.warn("删除文件/目录失败: {}", dir.getAbsolutePath());
-        }
-    }
-
-    private String compressAndConvertToHLS(String inputVideoUrl, String outputDir, int crf, String maxBitrate)
-            throws Exception {
-
+    /**
+     * 硬件加速转码：修复了 profile 导致的 avcodec_open2 错误
+     */
+    private String compressAndConvertToHLS(String inputVideoUrl, String outputDir, int crf, String maxBitrate) throws Exception {
         File dir = new File(outputDir);
         if (!dir.exists()) Files.createDirectories(dir.toPath());
-
         String m3u8Path = new File(dir, "master.m3u8").getAbsolutePath();
 
         try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(inputVideoUrl)) {
+            // GPU 解码加速
+            grabber.setVideoOption("hwaccel", "cuda");
             grabber.start();
 
-            // 判断是否可以使用流拷贝（不需要重新编码）
-            boolean isCodecCompatible = false;
-            String videoCodec = grabber.getVideoCodecName();   // 可能返回 "h264"
-            String audioCodec = grabber.getAudioCodecName();   // 可能返回 "aac"
-            if ("h264".equalsIgnoreCase(videoCodec) && "aac".equalsIgnoreCase(audioCodec)) {
-                isCodecCompatible = true;
-            }
-            // 如果使用默认压缩参数（未要求降低码率/质量），则优先尝试拷贝
-            boolean useCopy = isCodecCompatible && crf == 24 && "3000k".equals(maxBitrate);
-
-            try (FFmpegFrameRecorder recorder = new FFmpegFrameRecorder(m3u8Path, 2)) {
+            try (FFmpegFrameRecorder recorder = new FFmpegFrameRecorder(m3u8Path, grabber.getImageWidth(), grabber.getImageHeight(), 2)) {
                 recorder.setFormat("hls");
                 recorder.setFrameRate(grabber.getFrameRate());
-                recorder.setImageWidth(grabber.getImageWidth());
-                recorder.setImageHeight(grabber.getImageHeight());
 
-                if (useCopy) {
-                    // 直接拷贝流，不重新编码
-                    recorder.setVideoCodecName("copy");
-                    recorder.setAudioCodecName("copy");
-                    log.info("使用流拷贝模式，速度最快，体积不变");
-                } else {
-                    // 重新编码：采用 5 秒 GOP（每5秒一个关键帧）和 10 秒切片，降低 I 帧密度
-                    recorder.setVideoCodecName("libx264");
-                    recorder.setAudioCodecName("aac");
-                    recorder.setVideoBitrate(3_000_000);
-                    recorder.setVideoOption("crf", String.valueOf(crf));
-                    recorder.setVideoOption("maxrate", maxBitrate);
-                    recorder.setVideoOption("bufsize", "6000k");
+                // 编码加速配置
+                recorder.setVideoCodecName("h264_nvenc");
+                recorder.setAudioCodecName("aac");
 
-                    double frameRate = grabber.getFrameRate();
-                    int gopSize = (int) Math.round(frameRate * 5);   // 5秒一个关键帧
-                    recorder.setVideoOption("g", String.valueOf(gopSize));
-                    recorder.setVideoOption("keyint_min", String.valueOf(gopSize));
-                    // 强制每5秒插入关键帧（如果需要）
-                    recorder.setVideoOption("force_key_frames", "expr:gte(t,n_forced*5)");
-                    log.info("重新编码模式，GOP={} 帧（5秒），切片时间10秒", gopSize);
-                }
+                // --- 修复点：移除报错的 profile 设置，改用 preset 和 cq 控制质量 ---
+                recorder.setVideoOption("preset", "p4"); // p1-p7，p4为性能质量平衡点
+                recorder.setVideoOption("rc", "vbr");    // 动态码率
+                recorder.setVideoOption("cq", String.valueOf(crf));
+                recorder.setVideoBitrate(3_000_000);
+                recorder.setVideoOption("maxrate", maxBitrate);
+                recorder.setVideoOption("bufsize", "6000k");
 
-                // HLS 通用参数
-                recorder.setOption("hls_time", "10");              // 10秒切片（减少切片数量）
+                // HLS 特定配置
+                recorder.setOption("hls_time", "10");
                 recorder.setOption("hls_list_size", "0");
+                recorder.setOption("hls_flags", "split_by_time");
                 recorder.setOption("hls_segment_filename", dir.getAbsolutePath() + "/segment_%05d.ts");
-                recorder.setOption("hls_flags", "split_by_time");  // 允许非关键帧切片（对拷贝模式尤其重要）
 
                 recorder.start();
+                log.info("🔥 4060 GPU 加速转码中...");
 
                 Frame frame;
                 while ((frame = grabber.grabFrame()) != null) {
                     recorder.record(frame);
                 }
-
-                log.info("✅ HLS 转换完成: {}", m3u8Path);
+                recorder.stop();
                 return m3u8Path;
             }
         }
     }
 
-
     @Override
     public String extractFinalCover(String customId, String inputVideoUrl) throws Exception {
-        log.info("开始抽取视频首帧作为最终封面，ID: {}", customId);
-
         try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(inputVideoUrl)) {
+            grabber.setVideoOption("hwaccel", "cuda");
             grabber.start();
 
-            // 1. 定位到第1秒
-            long targetTime = 1_000_000L;
-            if (grabber.getLengthInTime() < targetTime) {
-                targetTime = 0;
-            }
-            grabber.setTimestamp(targetTime);
+            // 跳过开头，取第1秒的画面
+            grabber.setTimestamp(1_000_000L);
 
             try (Java2DFrameConverter converter = new Java2DFrameConverter()) {
                 Frame frame = grabber.grabImage();
@@ -227,20 +153,20 @@ public class FfmpegServiceImpl implements FfmpegService {
 
                 if (frame != null) {
                     BufferedImage image = converter.getBufferedImage(frame);
-                    // 2. 使用自定义 ID 命名
                     String objectName = customId + ".jpg";
-                    String bucketName = "final-cover";
-
-                    // 3. 上传到 MinIO
-                    minioService.uploadImage(image, bucketName, objectName);
-
-                    log.info("✅ 最终封面上传完成: {}", objectName);
+                    minioService.uploadImage(image, "final-cover", objectName);
                     return objectName;
                 }
             }
         }
-        throw new RuntimeException("视频帧抓取失败");
+        throw new RuntimeException("封面提取失败");
     }
 
-
+    private void deleteDirectory(@NotNull File dir) {
+        File[] children = dir.listFiles();
+        if (children != null) {
+            for (File child : children) deleteDirectory(child);
+        }
+        dir.delete();
+    }
 }

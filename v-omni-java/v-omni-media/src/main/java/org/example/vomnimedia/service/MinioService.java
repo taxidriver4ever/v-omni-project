@@ -60,4 +60,6 @@ public interface MinioService {
     void uploadDirectory(File dir, String bucketName, String remotePrefix) throws Exception;
 
     public String getPublicUrl(String bucketName, String objectName);
+
+    void deleteDirectory(String bucketName, String prefix) throws Exception;
 }

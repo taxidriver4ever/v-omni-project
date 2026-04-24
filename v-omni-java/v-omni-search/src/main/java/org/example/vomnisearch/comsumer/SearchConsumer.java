@@ -54,11 +54,12 @@ public class SearchConsumer {
     private DocumentUserViewedService documentUserViewedService;
 
     @Resource
+    private HotWordRedisService hotWordRedisService;
+
+    @Resource
     private VectorService vectorService;
 
     private final static String HOT_WORDS_KEY = "hot_words:global";
-
-    private final static String SEARCH_SCORE = "4";
 
     @PostConstruct
     public void uselessWordsAdd() {
@@ -196,6 +197,7 @@ public class SearchConsumer {
                 word,
                 score
         );
+        hotWordRedisService.incrementHotWord(word,Double.parseDouble(score));
     }
 
 

@@ -62,7 +62,7 @@ public class MediaController {
         return MyResult.success();
     }
 
-    @DeleteMapping("/media")
+    @DeleteMapping("/video")
     public MyResult<String> deleteMedia(String mediaId) throws Exception {
         mediaService.deleteMedia(mediaId);
         return MyResult.success();

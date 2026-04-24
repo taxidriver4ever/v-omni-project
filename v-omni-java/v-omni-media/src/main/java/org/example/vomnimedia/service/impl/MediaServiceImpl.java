@@ -5,6 +5,7 @@ import org.example.vomnimedia.domain.statemachine.MediaEvent;
 import org.example.vomnimedia.domain.statemachine.MediaEventContext;
 import org.example.vomnimedia.domain.statemachine.MediaState;
 import org.example.vomnimedia.domain.statemachine.MediaTransitionService;
+import org.example.vomnimedia.dto.UserIdAndMediaIdDto;
 import org.example.vomnimedia.mapper.MediaMapper;
 import org.example.vomnimedia.po.MediaPo;
 import org.example.vomnimedia.service.IdentityService;
@@ -37,13 +38,16 @@ public class MediaServiceImpl implements MediaService {
     @Resource
     private KafkaTemplate<String,String> kafkaTemplate;
 
+    @Resource
+    private KafkaTemplate<String,UserIdAndMediaIdDto> userIdAndMediaIdDtoKafkaTemplate;
+
     @Override
     public PreSignResponseVo generatePreSignature() {
-        Map<String, String> map = new HashMap<>();
+        Long userId = SecurityUtils.getCurrentUserId();
 
         Long id = identityService.getOrCreateUserIdByEmail();
 
-        MediaEventContext mediaEventContext = new MediaEventContext(id);
+        MediaEventContext mediaEventContext = new MediaEventContext(id).with("userId", String.valueOf(userId));
 
         MediaState currentState = mediaTransitionService.sendEvent(mediaEventContext, MediaEvent.GET_PRE_SIGNATURE);
 
@@ -59,7 +63,10 @@ public class MediaServiceImpl implements MediaService {
     @Override
     public void deleteMedia(String mediaId) {
         String userId = String.valueOf(SecurityUtils.getCurrentUserId());
-        kafkaTemplate.send("delete-media-topic", mediaId + ":" + userId);
+        UserIdAndMediaIdDto message = new UserIdAndMediaIdDto();
+        message.setUserId(userId);
+        message.setMediaId(mediaId);
+        userIdAndMediaIdDtoKafkaTemplate.send("delete-media-topic", message);
     }
 
 }

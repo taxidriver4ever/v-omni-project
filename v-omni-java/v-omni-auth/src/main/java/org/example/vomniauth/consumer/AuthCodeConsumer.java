@@ -107,7 +107,7 @@ public class AuthCodeConsumer {
                     VERIFICATION_EXPIRE_TIME,
                     TimeUnit.SECONDS
             );
-//            mailService.sendHtmlMail(email, "【V-Omni】注册验证码", htmlContent);
+            mailService.sendHtmlMail(email, "【V-Omni】注册验证码", htmlContent);
             log.info("注册邮件发送成功: {}", email);
         } catch (Exception e) {
             log.error("注册邮件发送彻底失败，开始回滚 Redis 状态: {}", email);
@@ -137,7 +137,7 @@ public class AuthCodeConsumer {
                     VERIFICATION_EXPIRE_TIME,
                     TimeUnit.SECONDS
             );
-//            mailService.sendHtmlMail(email, "【V-Omni】登录验证码", htmlContent);
+            mailService.sendHtmlMail(email, "【V-Omni】登录验证码", htmlContent);
             log.info("登录邮件发送成功: {}", email);
         } catch (Exception e) {
             log.error("登录邮件发送彻底失败，开始回滚 Redis 状态: {}", email);

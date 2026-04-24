@@ -139,7 +139,7 @@ public class AuthServiceImpl implements AuthService {
                     "blacklist:access_token:" + jti,
                     "1",
                     ttl,
-                    TimeUnit.MILLISECONDS
+                    TimeUnit.SECONDS
             );
         }
         ResponseCookie deleteCookie = ResponseCookie.from("v_omni_refresh_token", "")

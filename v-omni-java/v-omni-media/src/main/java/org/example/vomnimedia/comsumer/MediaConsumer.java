@@ -117,7 +117,7 @@ public class MediaConsumer {
 
         byteRedisTemplate.opsForValue().set("media:video:vector:id:" + id, bytes, Duration.ofMinutes(15));
         byteRedisTemplate.opsForValue().set("media:title:vector:id:" + id, titleBytes, Duration.ofMinutes(15));
-        stringRedisTemplate.opsForValue().set("media:cover_url:id:" + id, coverPath, Duration.ofMinutes(15));
+        stringRedisTemplate.opsForValue().set("media:cover_path:id:" + id, coverPath, Duration.ofMinutes(15));
 
         MediaEventContext mediaEventContext = new MediaEventContext(Long.parseLong(id))
                 .with("title", title)
@@ -142,6 +142,9 @@ public class MediaConsumer {
     public void deleteMediaTopicConsume(@NotNull UserIdAndMediaIdDto message) throws Exception {
         String id = message.getMediaId();
         String userId = message.getUserId();
+
+        minioService.deleteDirectory("final-video", "hls/" + id + "/");
+        minioService.deleteFile("final-cover", id + ".jpg");
 
         documentVectorMediaService.deleteById(id);
         mediaMapper.updateIsDeletedByIdAndUserId(Long.parseLong(id),Long.parseLong(userId) , new Date());

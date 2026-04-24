@@ -91,17 +91,20 @@ public class MediaAction {
     }
 
     private void prepareAndSave(@NotNull MediaEventContext mediaEventContext) {
+
         Long id = mediaEventContext.getId();
         String userId = mediaEventContext.getString("userId");
         String title = mediaEventContext.getString("title");
         String idStr = String.valueOf(id);
 
+
         // 1. 同时获取两路向量 (耗时 IO)
         float[] videoVectorRaw = getVideoVectorFromRedis(idStr);
         float[] titleVectorRaw = getTitleVectorFromRedis(idStr);
 
+
         // 封面路径获取
-        String coverPath = stringRedisTemplate.opsForValue().get("media:vector:id:" + id);
+        String coverPath = stringRedisTemplate.opsForValue().get("media:cover_path:id:" + id);
 
         // 只要有一路向量缺失，就无法满足双塔检索需求
         if (videoVectorRaw == null || titleVectorRaw == null) {
@@ -110,14 +113,19 @@ public class MediaAction {
             return;
         }
 
+
         // 2. 耗时计算：转换格式 (放在事务外)
         List<Float> videoVector = convertToList(videoVectorRaw);
         List<Float> titleVector = convertToList(titleVectorRaw);
+
 
         // 3. 调用代理方法执行事务
         try {
             self.executePersistentTask(id, userId, title, videoVector, titleVector, coverPath);
         } catch (IOException e) {
+            log.error("视频持久化任务失败，视频ID: {}, 错误原因: {}", id, e.getMessage());
+            throw new RuntimeException(e);
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
@@ -138,7 +146,7 @@ public class MediaAction {
     public void executePersistentTask(Long id, String userId, String title,
                                       List<Float> videoVector,
                                       List<Float> titleVector,
-                                      String coverPath) throws IOException {
+                                      String coverPath) throws Exception {
 
         // 1. MySQL 操作：查询作者
         AvatarAndAuthorDto avatarAndAuthorDto = userMapper.selectAvatarAndAuthorByUserId(Long.parseLong(userId));
@@ -179,9 +187,9 @@ public class MediaAction {
         mediaPo.setState(MediaState.FINISHED.toString());
         mediaPo.setUserId(Long.parseLong(userId));
 
-
         mediaMapper.insertUser(mediaPo); // 确保你的 Mapper 能够处理插入
         documentVectorMediaService.upsert(documentVectorMediaPo);
+        minioService.deleteFile("raws-video", String.valueOf(id));
     }
 
     private float[] getVideoVectorFromRedis(@NotNull String id) {

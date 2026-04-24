@@ -3,11 +3,9 @@ package org.example.vomnisearch.controller;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.example.vomnisearch.common.MyResult;
-import org.example.vomnisearch.dto.SearchHistoryDTO;
 import org.example.vomnisearch.dto.SearchMediaRequestDto;
 import org.example.vomnisearch.dto.UserContent;
 import org.example.vomnisearch.dto.UserIdAndMediaIdDto;
-import org.example.vomnisearch.po.DocumentHotWordsPo;
 import org.example.vomnisearch.service.*;
 import org.example.vomnisearch.util.SecurityUtils;
 import org.example.vomnisearch.vo.RecommendMediaVo;
@@ -28,9 +26,6 @@ public class SearchController {
     private SearchService searchService;
 
     @Resource
-    private DocumentHotWordsService documentHotWordsService;
-
-    @Resource
     private UserRecommendationRedisService redisService;
 
     @Resource
@@ -42,6 +37,9 @@ public class SearchController {
     @Resource
     private DocumentVectorMediaService documentVectorMediaService;
 
+    @Resource
+    private HotWordRedisService hotWordRedisService;
+
     @PostMapping("/hybrid/video")
     public MyResult<List<SearchMediaVo>> searchVideo(@RequestBody SearchMediaRequestDto searchMediaRequestDto,
                                               HttpServletRequest httpServletRequest) throws Exception {
@@ -51,12 +49,12 @@ public class SearchController {
     }
 
     @PostMapping("/prefix/hot-word")
-    public MyResult<List<DocumentHotWordsPo>> searchHotWord(@RequestBody UserContent userContent) throws Exception {
+    public MyResult<List<String>> searchHotWord(@RequestBody UserContent userContent) throws Exception {
         String content = userContent.getContent();
         if(content == null || content.isEmpty()) return MyResult.error(403,"没法查");
-        List<DocumentHotWordsPo> suggestions = documentHotWordsService.getSuggestions(content);
-        if(suggestions == null || suggestions.isEmpty()) return MyResult.error(404,"没有搜索到");
-        return MyResult.success(suggestions);
+        List<String> strings = hotWordRedisService.searchByPrefix(content);
+        if(strings == null || strings.isEmpty()) return MyResult.error(404,"没有搜索到");
+        return MyResult.success(strings);
     }
 
     @GetMapping("/history")
