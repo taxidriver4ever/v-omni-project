@@ -1,0 +1,29 @@
+spring:
+  profiles:
+    active: dev  # 默认激活开发环境配置
+  application:
+    name: v-omni-auth
+
+  # Jackson 全局配置：处理前后端交互的时间格式和空值
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null # 字段为 null 时不返回给前端，节省带宽
+
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: 18283
+  tomcat:
+    threads:
+      max: 500        # 增大工作线程池，与JedisPool的200匹配或更高
+    accept-count: 200 # 增大等待队列长度
+    connection-timeout: 5000  # 连接超时时间，防止死连接长期占用
+
+
+v-omni:
+  auth:
+    jwt-secret: ${V_OMNI_JWT_SECRET}
+  model-path: ${V_OMNI_MODEL_PATH}

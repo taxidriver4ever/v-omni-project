@@ -1,0 +1,143 @@
+version: '3.8'
+
+services:
+
+  my-mysql:
+    image: mysql:8.0
+    container_name: mysql-server
+    restart: always
+    ports:
+      - "13306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    networks:
+      - v-omni-network
+
+  # ✅ 原生 my-redis 已被删除，由下面的 redis-stack 统一提供服务
+
+  redis-stack:
+    image: redis/redis-stack:latest
+    container_name: my-redis
+    restart: always
+    ports:
+      - "16379:6379"    # ✅ 恢复标准端口，Java 无需特殊修改
+      - "18001:8001"    # Redis Insight 界面
+    environment:
+      - REDIS_ARGS=--save 60 1 --appendonly yes --requirepass yourpassword
+    volumes:
+      - ./redis-data:/data # ✅ 统一使用中划线目录，且能承接你原本的数据
+    deploy:
+      resources:
+        limits:
+          memory: 1G  # ✅ 适当调大内存，确保 Search 模块运行稳定
+    networks:
+      - v-omni-network
+
+  my-kafka:
+    image: apache/kafka:latest
+    container_name: my-kafka
+    ports:
+      - "19092:19092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://my-kafka:9092,EXTERNAL://localhost:19092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@my-kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - v-omni-network
+
+  my-minio:
+    image: minio/minio:latest
+    container_name: my-minio
+    restart: always
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password123
+    volumes:
+      - ./minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - v-omni-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio-init
+    depends_on:
+      my-minio:
+        condition: service_healthy
+    networks:
+      - v-omni-network
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set myminio http://my-minio:9000 admin password123;
+      mc mb --ignore-existing myminio/raws-video;
+      mc mb --ignore-existing myminio/final-video;
+      mc mb --ignore-existing myminio/final-cover;
+      mc ilm rule add --expire-days 1 myminio/raws-video;
+      mc policy set public myminio/final-cover;
+      echo 'MinIO initialization completed';
+      exit 0;
+      "
+
+  my-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: my-elasticsearch
+    restart: always
+    ports:
+      - "19200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    volumes:
+      - ./es-data:/usr/share/elasticsearch/data
+    networks:
+      - v-omni-network
+
+# # 1. 进入容器
+# docker exec -it my-elasticsearch bash
+
+# # 2. 安装插件（已安装过会提示已存在，可忽略）
+# ./bin/elasticsearch-plugin install --batch https://get.infini.cloud/elasticsearch/analysis-ik/8.12.2
+
+# # 3. 退出容器
+# exit
+
+# # 4. 重启容器使插件生效
+# docker restart my-elasticsearch
+
+  my-kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.2
+    container_name: my-kibana
+    ports:
+      - "15601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://my-elasticsearch:9200
+    depends_on:
+      - my-elasticsearch
+    networks:
+      - v-omni-network
+
+networks:
+  v-omni-network:
+    driver: bridge

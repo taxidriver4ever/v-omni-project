@@ -1,0 +1,61 @@
+spring:
+
+  # Redis
+  data:
+    redis:
+      host: localhost
+      port: 16379
+      database: 0
+      timeout: 2000ms
+      password: ${V_OMNI_REDIS_PASSWORD}  # 👈 确保冒号后有空格
+      username: ${V_OMNI_REDIS_USERNAME}
+      lettuce:
+        pool:
+          max-active: 50   # Lettuce 连接池最大连接数（建议比 Jedis 小很多）
+          max-idle: 20
+          min-idle: 5
+          max-wait: 1000ms
+          time-between-eviction-runs: 30s
+
+
+  # Kafka
+  # Kafka
+  kafka:
+    bootstrap-servers: localhost:19092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      retries: 3
+    consumer:
+      group-id: v-omni-media-group
+      auto-offset-reset: earliest
+      # 1. 禁用自动提交，改由我们代码控制
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "org.example.vomnimedia.dto"
+        # 2. 增加消费者的生命体征检查间隔，防止转码太久被 Kafka 踢出组
+        max.poll.interval.ms: 900000 # 15分钟
+        # 3. 每次只拉 1 条，处理完再拿下一条，防止积压报错
+        max.poll.records: 1
+    listener:
+      # 4. 关键：设置监听器模式为手动立即提交
+      ack-mode: manual_immediate
+
+  # MySQL
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:13306/omni_db?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=GMT%2B8
+    username: root
+    password: ${V_OMNI_DATASOURCE_PASSWORD}
+
+  elasticsearch:
+    uris: http://localhost:19200
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: admin
+  secret-key: ${V_OMNI_MINIO_PASSWORD}
+  bucket-name: v-omni-bucket      # 刚刚创建的存储桶名称
+  upload-url-expiry-seconds: 7200

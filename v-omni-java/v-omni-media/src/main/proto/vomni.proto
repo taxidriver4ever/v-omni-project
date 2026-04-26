@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+// 必须和 Python 侧保持一致
+package vomni;
+
+// Java 生成类存放的路径
+option java_package = "org.example.vomnimedia.grpc";
+option java_multiple_files = true;
+
+service Recommender {
+  // 推荐接口
+  rpc GetUserEmbedding (RecommendRequest) returns (RecommendResponse);
+  // 图像向量化接口
+  rpc GetImageEmbeddings (ImageRequest) returns (MultiVectorResponse);
+  // 文本向量化接口
+  rpc GetTextEmbedding (TextRequest) returns (VectorResponse);
+}
+
+// --- 基础向量结构 ---
+message Vector {
+  repeated float values = 1;
+}
+
+// --- 图像相关 ---
+message ImageRequest {
+  repeated bytes image_data = 1;
+  bool do_pooling = 2;
+}
+
+message MultiVectorResponse {
+  repeated Vector vectors = 1;
+}
+
+// --- 文本相关 ---
+message TextRequest {
+  string text = 1;
+}
+
+message VectorResponse {
+  repeated float values = 1;
+}
+
+// --- 推荐逻辑相关 (报错就在这里，之前漏掉了定义) ---
+message RecommendRequest {
+  repeated Vector q_5_videos = 1;
+  repeated Vector short_k = 2;
+  repeated Vector long_k = 3;
+  repeated float short_weights = 4;
+}
+
+message RecommendResponse {
+  string status = 1;
+  repeated float user_embedding = 2;
+}

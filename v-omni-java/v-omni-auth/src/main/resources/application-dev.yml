@@ -1,0 +1,73 @@
+spring:
+  jmx:
+    enabled: false
+    # Redis
+  data:
+    redis:
+      host: localhost
+      port: 16379
+      database: 0
+      timeout: 2000ms
+      password: ${V_OMNI_REDIS_PASSWORD}  # 👈 确保冒号后有空格
+      username: ${V_OMNI_REDIS_USERNAME}
+      lettuce:
+        pool:
+          max-active: 50   # Lettuce 连接池最大连接数（建议比 Jedis 小很多）
+          max-idle: 20
+          min-idle: 5
+          max-wait: 1000ms
+          time-between-eviction-runs: 30s
+
+    # Kafka
+  kafka:
+    bootstrap-servers: localhost:19092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # 核心修复点：将 StringSerializer 改为 JsonSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      retries: 3
+    consumer:
+      group-id: v-omni-media-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # 建议同步修改消费者（如果你在这个项目里也消费这个 Topic）
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # 如果消费者需要将 JSON 转回具体的 DTO 类，需要添加此信任包路径
+        spring.json.trusted.packages: "org.example.vomniauth.dto"
+
+  # MySQL
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:13306/omni_db?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=GMT%2B8
+    username: root
+    password: ${V_OMNI_DATASOURCE_PASSWORD}
+#    hikari:
+#      maximum-pool-size: 50
+#      minimum-idle: 10
+#      idle-timeout: 30000
+#      connection-timeout: 20000
+
+  # Mail
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: ${V_OMNI_MAIL_USERNAME}
+    password: ${V_OMNI_MAIL_PASSWORD}
+    protocol: smtps
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+
+  elasticsearch:
+    uris: http://localhost:19200
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: admin
+  secret-key: ${V_OMNI_MINIO_PASSWORD}
+  bucket-name: v-omni-bucket      # 刚刚创建的存储桶名称
+  upload-url-expiry-seconds: 7200
