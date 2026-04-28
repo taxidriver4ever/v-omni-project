@@ -23,4 +23,6 @@ public interface DocumentVectorMediaService {
     List<RecommendMediaVo> recommendRandom(int size) throws IOException;
     boolean availableMedia(String mediaId) throws IOException;
     DocumentVectorMediaPo getVectorById(String mediaId) throws IOException;
+    byte[] getVectorByMediaId(String mediaId) throws IOException;
+    List<RecommendMediaVo> searchByProfileVector(float[] userQueryVector, int size) throws IOException;
 }

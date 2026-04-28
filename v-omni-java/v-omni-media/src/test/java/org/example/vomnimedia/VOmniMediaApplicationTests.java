@@ -53,8 +53,8 @@ class VOmniMediaApplicationTests {
 //        } catch (Exception e) {
 //            System.err.println("❌ 强制启用失败，报错提示: " + e.getMessage());
 //        }
-//        String s = jwtUtils.generateAccessToken("170452383233609728");
-//        System.out.println(s);
+        String s = jwtUtils.generateAccessToken("170452383233609728");
+        System.out.println(s);
     }
 
 }

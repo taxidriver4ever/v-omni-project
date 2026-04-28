@@ -32,6 +32,6 @@ public interface UserMapper {
     @Select("SELECT id AS id,state AS state FROM u_user WHERE email = #{email}")
     UserPo findIdStateByEmail(@Param("email") String email);
 
-    @Select("SELECT id from u_user LIMIT 100")
+    @Select("SELECT id from u_user")
     List<Long> findId();
 }

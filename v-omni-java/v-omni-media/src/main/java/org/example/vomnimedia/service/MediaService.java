@@ -6,6 +6,6 @@ import org.example.vomnimedia.vo.PreSignResponseVo;
 import java.util.Map;
 
 public interface MediaService {
-    PreSignResponseVo generatePreSignature(String userId) throws Exception;
+    PreSignResponseVo generatePreSignature() throws Exception;
     void deleteMedia(String mediaId) throws Exception;
 }

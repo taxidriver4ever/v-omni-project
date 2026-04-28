@@ -118,16 +118,20 @@ public class MediaConsumer {
         }
 
         try {
-            log.info("📸 线程 [{}] 开始抽帧: {}", Thread.currentThread().getName(), id);
+            log.info("📸 线程 [{}] 开始生成向量: {}", Thread.currentThread().getName(), id);
 
-            String coverPath = ffmpegService.extractFinalCover(id, message.getDownloadUrl());
-            float[] videoFloats = ffmpegService.extractVideoVector(id, message.getDownloadUrl());
-            float[] textVector = vectorService.getTextVector(message.getTitle());
+            String downloadUrl = message.getDownloadUrl();
 
-            saveVectorsToRedis(id, videoFloats, textVector, coverPath);
+            String title = message.getTitle();
+
+            String coverPath = ffmpegService.extractFinalCover(id, downloadUrl);
+
+            float[] fusionVector = vectorService.getFusionVector(downloadUrl, title);
+
+            saveVectorsToRedis(id, fusionVector, coverPath);
 
             MediaEventContext context = new MediaEventContext(Long.parseLong(id))
-                    .with("title", message.getTitle())
+                    .with("title", title)
                     .with("userId", message.getUserId());
             mediaTransitionService.sendEvent(context, MediaEvent.FINISH_EXTRACTION);
 
@@ -176,15 +180,11 @@ public class MediaConsumer {
         }
     }
 
-    private void saveVectorsToRedis(String id, float[] videoVector, float[] textVector, String coverPath) {
+    private void saveVectorsToRedis(String id, float[] videoVector, String coverPath) {
         byte[] vBytes = new byte[videoVector.length * 4];
         ByteBuffer.wrap(vBytes).asFloatBuffer().put(videoVector);
 
-        byte[] tBytes = new byte[textVector.length * 4];
-        ByteBuffer.wrap(tBytes).asFloatBuffer().put(textVector);
-
         byteRedisTemplate.opsForValue().set("media:video:vector:id:" + id, vBytes, Duration.ofHours(2));
-        byteRedisTemplate.opsForValue().set("media:title:vector:id:" + id, tBytes, Duration.ofHours(2));
         stringRedisTemplate.opsForValue().set("media:cover_path:id:" + id, coverPath, Duration.ofHours(2));
     }
 

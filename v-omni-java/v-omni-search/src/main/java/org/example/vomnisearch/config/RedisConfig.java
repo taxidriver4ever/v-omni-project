@@ -77,10 +77,19 @@ public class RedisConfig {
     }
 
     @Bean
-    public DefaultRedisScript<Boolean> upsertScript() {
+    public DefaultRedisScript<Boolean> decayPushScript() {
         DefaultRedisScript<Boolean> redisScript = new DefaultRedisScript<>();
-        redisScript.setLocation(new ClassPathResource("lua/upsert.lua"));
+        redisScript.setLocation(new ClassPathResource("lua/decay_push.lua"));
         redisScript.setResultType(Boolean.class);
         return redisScript;
+    }
+
+
+    @Bean
+    public DefaultRedisScript<Long> sugAddScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setLocation(new ClassPathResource("lua/sugadd.lua"));
+        script.setResultType(Long.class); // 必须指定结果类型
+        return script;
     }
 }

@@ -9,5 +9,4 @@ public interface VectorService {
      * 文本向量化：将搜索词或标题转为 512 维的特征向量
      */
     float[] getTextVector(String text) throws Exception;
-    float[] fuseUserInterest(float[] currentVector, float[] lastVector, float[] interestVector) throws Exception;
 }

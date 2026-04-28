@@ -2,6 +2,7 @@ package org.example.vomnimedia.controller;
 
 import io.minio.MinioClient;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.example.vomnimedia.common.MyResult;
 import org.example.vomnimedia.domain.statemachine.MediaState;
 import org.example.vomnimedia.dto.PublishRequestDto;
@@ -17,6 +18,7 @@ import java.util.Map;
 
 @CrossOrigin(maxAge = 3600)
 @RestController
+@Slf4j
 @RequestMapping("/media")
 public class MediaController {
 
@@ -30,20 +32,22 @@ public class MediaController {
     private MinioService minioService;
 
     @PostMapping("/pre-sign")
-    public MyResult<PreSignResponseVo> generatePreSignature(@RequestParam String userId) throws Exception {
-        PreSignResponseVo preSignResponseVo = mediaService.generatePreSignature(userId);
+    public MyResult<PreSignResponseVo> generatePreSignature() throws Exception {
+        PreSignResponseVo preSignResponseVo = mediaService.generatePreSignature();
         MediaState state = MediaState.ERROR;
         if(preSignResponseVo != null) {
             state = preSignResponseVo.getMediaState();
         }
         switch(state) {
             case EXCEED_LIMIT -> {
+                log.warn("限流成功，mediaState={}", state);
                 return MyResult.error(429,"请求过于频繁");
             }
             case PREPARE_PUBLISH_MEDIA -> {
                 return MyResult.success(preSignResponseVo);
             }
             default -> {
+                log.error("预签名失败，mediaState={}", state);
                 return MyResult.error(500,"获取预签名失败");
             }
         }
@@ -56,8 +60,7 @@ public class MediaController {
 
         if (!exists) return MyResult.error(404,"视频文件尚未上传完成，请稍后再试");
 
-//        String userId = String.valueOf(SecurityUtils.getCurrentUserId());
-        String userId = req.getUserId();
+        String userId = String.valueOf(SecurityUtils.getCurrentUserId());
         req.setUserId(userId);
         publishTemplate.send("video-process-topic", req);
         return MyResult.success();

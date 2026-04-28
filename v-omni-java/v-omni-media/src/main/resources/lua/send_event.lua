@@ -2,7 +2,7 @@
 local function initial_get_pre_signature_strategy(user_id)
     local retry_key = 'pre_sign:retry:times:user_id:' .. user_id
     local ttl = 300
-    local max_attempts = 10
+    local max_attempts = 5
 
     -- 先检查是否已达上限（对应 ExceedLimitGuard）
     local current = redis.call('GET', retry_key)

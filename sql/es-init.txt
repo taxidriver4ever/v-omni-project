@@ -6,7 +6,7 @@ PUT /vector_media_index
     "properties": {
       "title": { "type": "text", "analyzer": "ik_max_word" },
       "author": { "type": "keyword" },
-      "author_id": { "type": "long" }, // 新增：方便后续跳转主页
+      "author_id": { "type": "long" },
       "avatar_path": { "type": "keyword", "index": false },      
       "cover_path": { "type": "keyword", "index": false }, 
       "deleted": { "type": "boolean" },
@@ -18,12 +18,9 @@ PUT /vector_media_index
         "type": "date", 
         "format": "yyyy-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis" 
       },
-      
-      // 计数类字段（存快照，实时值从 Redis 拿）
       "like_count": { "type": "integer" },
-      "comment_count": { "type": "integer" }, // 新增
-      "collect_count": { "type": "integer" }, // 新增
-      
+      "comment_count": { "type": "integer" },
+      "collect_count": { "type": "integer" },
       "video_embedding": {
         "type": "dense_vector",
         "dims": 512,
@@ -42,7 +39,6 @@ PUT /vector_media_index
   }
 }
 
-
 DELETE /user_media_interaction_index
 
 PUT /user_media_interaction_index
@@ -54,116 +50,15 @@ PUT /user_media_interaction_index
       "like_count": { "type": "integer" },
       "like_user_ids": { "type": "keyword" },
       "collect_user_ids": { "type": "keyword" },
-      "create_time": { "type": "date" }
-    }
-  }
-}
-
-DELETE /user_media_comments_index
-
-PUT /user_media_comments_index
-{
-  "mappings": {
-    "properties": {
-      "comment_id": { "type": "long" },
-      "media_id": { "type": "long" },
-      "user_id": { "type": "long" },
-      "user_name": { "type": "keyword" },
-      "user_avatar": { "type": "keyword", "index": false },
-      "content": { "type": "text", "analyzer": "ik_max_word" },
-      "like_count": { "type": "integer" },
-      "root_id": { "type": "long" },   // 0为主评，非0为该评论所属的根评论ID
-      "parent_id": { "type": "long" }, // 被回复的评论ID
-      "create_time": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||epoch_millis" }
-    }
-  }
-}
-
-
-DELETE /user_profile_index
-
-PUT /user_profile_index
-{
-  "mappings": {
-    "properties": {
-      "user_id": { "type": "keyword" },
-      "last_search_vectors": { 
-        "type": "dense_vector", 
-        "dims": 512, 
-        "index": false  // 仅存储，不检索
-      },
-      "interest_vector": { 
-        "type": "dense_vector", 
-        "dims": 512, 
-        "index": true, 
-        "similarity": "cosine" // 用于后续的个性化推荐
-      },
-      "updated_time": { "type": "date" }
-    }
-  }
-}
-
-DELETE /vector_media_index
-
-PUT /vector_media_index
-{
-  "mappings": {
-    "properties": {
-      "title": { "type": "text", "analyzer": "ik_max_word" },
-      "author": { "type": "keyword" },
-      "author_id": { "type": "long" }, // 新增：方便后续跳转主页
-      "avatar_path": { "type": "keyword", "index": false },      
-      "cover_path": { "type": "keyword", "index": false }, 
-      "deleted": { "type": "boolean" },
       "create_time": { 
-        "type": "date", 
-        "format": "yyyy-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis" 
-      },
-      "update_time": { 
-        "type": "date", 
-        "format": "yyyy-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis" 
-      },
-      
-      // 计数类字段（存快照，实时值从 Redis 拿）
-      "like_count": { "type": "integer" },
-      "comment_count": { "type": "integer" }, // 新增
-      "collect_count": { "type": "integer" }, // 新增
-      
-      "video_embedding": {
-        "type": "dense_vector",
-        "dims": 512,
-        "index": true,
-        "similarity": "cosine",
-        "index_options": { "type": "int8_hnsw", "m": 16, "ef_construction": 100 }
-      },
-      "text_embedding": {
-        "type": "dense_vector",
-        "dims": 512,
-        "index": true,
-        "similarity": "cosine",
-        "index_options": { "type": "int8_hnsw", "m": 16, "ef_construction": 100 }
+        "type": "date",
+        "format": "yyyy-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis"
       }
     }
   }
 }
 
 
-DELETE /user_media_interaction_index
-
-PUT /user_media_interaction_index
-{
-  "mappings": {
-    "properties": {
-      "media_id": { "type": "long" },
-      "cover_path": { "type": "keyword", "index": false },
-      "like_count": { "type": "integer" },
-      "like_user_ids": { "type": "keyword" },
-      "collect_user_ids": { "type": "keyword" },
-      "create_time": { "type": "date" }
-    }
-  }
-}
-
 DELETE /user_media_comments_index
 
 PUT /user_media_comments_index
@@ -177,13 +72,15 @@ PUT /user_media_comments_index
       "user_avatar": { "type": "keyword", "index": false },
       "content": { "type": "text", "analyzer": "ik_max_word" },
       "like_count": { "type": "integer" },
-      "root_id": { "type": "long" },   // 0为主评，非0为该评论所属的根评论ID
-      "parent_id": { "type": "long" }, // 被回复的评论ID
-      "create_time": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||epoch_millis" }
+      "root_id": { "type": "long" },
+      "parent_id": { "type": "long" },
+      "create_time": { 
+        "type": "date", 
+        "format": "yyyy-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis" 
+      }
     }
   }
 }
-
 
 DELETE /user_profile_index
 
@@ -192,42 +89,44 @@ PUT /user_profile_index
   "mappings": {
     "properties": {
       "user_id": { "type": "keyword" },
-      "last_search_vectors": { 
-        "type": "dense_vector", 
-        "dims": 512, 
-        "index": false  // 仅存储，不检索
+      "cluster_vectors": { 
+        "type": "binary",
+        "doc_values": false 
       },
       "interest_vector": { 
         "type": "dense_vector", 
         "dims": 512, 
-        "index": true, 
-        "similarity": "cosine" // 用于后续的个性化推荐
+        "index": false 
       },
-      "updated_time": { "type": "date" }
+      "updated_time": { 
+        "type": "date",
+        "format": "yyyy-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis"
+      }
     }
   }
 }
 
-DELETE /user_view_history_index
+DELETE /user_behavior_history_index
 
-PUT /user_view_history_index
+PUT /user_behavior_history_index
 {
   "mappings": {
     "properties": {
       "user_id": { "type": "keyword" },
       "media_id": { "type": "keyword" },
-      "create_time": { "type": "date" },
-      // 存一下当时产生这条记录的向量，它是你“雪球”演化的燃料
-      "view_vector": {
-        "type": "dense_vector",
-        "dims": 512,
+      "create_time": { 
+        "type": "date",
+        "format": "yyyy-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis"
+      },
+      "behavior_type": { "type": "keyword" },
+      "behavior_vector": { 
+        "type": "dense_vector", 
+        "dims": 1024, 
         "index": false 
       }
     }
   }
 }
-
-
 
 
 

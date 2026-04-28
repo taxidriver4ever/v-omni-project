@@ -1,8 +1,11 @@
 package org.example.vomnisearch.service.impl;
 
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomnisearch.service.HotWordRedisService;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -21,33 +24,34 @@ public class HotWordRedisServiceImpl implements HotWordRedisService {
     // 兼容原有的排行榜
     private static final String HOT_WORDS_ZSET_KEY = "hot_words:global";
 
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
     public HotWordRedisServiceImpl(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
-    /**
-     * 写入热词并增加分值
-     */
+    @Resource
+    private DefaultRedisScript<Long> sugAddScript;
+
     @Override
     public void incrementHotWord(String query, double score) {
         if (query == null || query.isBlank()) return;
         String term = query.trim().toLowerCase();
 
-        // 1. 更新排行榜 (ZSet)，用于查询没有前缀时的“热门搜索”
-        redisTemplate.opsForZSet().incrementScore(HOT_WORDS_ZSET_KEY, term, score);
+        try {
+            // 1. ZSet 更新（无隐患）
+            stringRedisTemplate.opsForZSet().incrementScore(HOT_WORDS_ZSET_KEY, term, score);
 
-        // 2. 更新 RediSearch 建议库 (FT.SUGADD)
-        // 参数说明: 库名, 词项, 分值, [INCR] 代表在原有分值上累加
-        redisTemplate.execute(connection -> {
-            connection.execute("FT.SUGADD",
-                    SUGGEST_DICTIONARY.getBytes(),
-                    term.getBytes(),
-                    String.valueOf(score).getBytes(),
-                    "INCR".getBytes());
-            return null;
-        }, true);
+            // 2. 使用 Lua 脚本绕过驱动解析 FT 指令响应的坑
+            stringRedisTemplate.execute(sugAddScript,
+                    Collections.singletonList(SUGGEST_DICTIONARY),
+                    term, String.valueOf(score));
+
+        } catch (Exception e) {
+            log.warn("RediSearch 建议库通过 Lua 写入失败（通常是驱动解析问题），已跳过: {}", e.getMessage());
+        }
     }
-
 
     /**
      * 前缀联想搜索（带分数排序）

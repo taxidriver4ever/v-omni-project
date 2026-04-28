@@ -2,6 +2,7 @@ package org.example.vomnimedia.service;
 
 import org.bytedeco.javacv.FrameGrabber;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
@@ -21,6 +22,4 @@ public interface FfmpegService {
     }
 
     String extractFinalCover(String customId, String inputVideoUrl) throws Exception;
-
-    float[] extractVideoVector(String id, String inputVideoUrl) throws Exception;
 }

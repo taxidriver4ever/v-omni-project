@@ -5,6 +5,7 @@ import org.example.vomniauth.domain.statemachine.AuthRule;
 import org.example.vomniauth.domain.statemachine.AuthState;
 import org.example.vomniauth.mapper.UserMapper;
 import org.example.vomniauth.po.UserPo;
+import org.example.vomniauth.service.DocumentUserProfileService;
 import org.example.vomniauth.util.SnowflakeIdWorker;
 import org.example.vomniauth.util.UsernameGenerator;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Date;
 import java.util.List;
 
 @SpringBootTest
@@ -32,6 +34,9 @@ class VOmniAuthApplicationTests {
     @Resource
     private RBloomFilter<String> emailBloomFilter;
 
+    @Resource
+    private DocumentUserProfileService documentUserProfileService;
+
     @Test
     void contextLoads() throws IOException {
 
@@ -40,10 +45,10 @@ class VOmniAuthApplicationTests {
 //            String email = "test_" + i + "@vomni.com";
 //            emailBloomFilter.add(email);
 //        }
-        List<Long> ids = userMapper.findId();
-        for(Long id : ids){
-            System.out.println(id);
-        }
+//        List<Long> ids = userMapper.findId();
+//        for(Long id : ids){
+            documentUserProfileService.createProfileOnRegistration("170452383233609728",new Date());
+//        }
     }
 
 }

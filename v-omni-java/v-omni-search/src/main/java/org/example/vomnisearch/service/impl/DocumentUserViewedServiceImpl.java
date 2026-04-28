@@ -94,10 +94,10 @@ public class DocumentUserViewedServiceImpl implements DocumentUserViewedService 
 
         // 3. 喂给 ONNX 模型
         // 调用你 ClipVectorServiceImpl 里的 fuseUserInterest 方法
-        float[] newInterestVector = vectorService.fuseUserInterest(currentVector, lastVector, oldInterest);
+//        float[] newInterestVector = vectorService.fuseUserInterest(currentVector, lastVector, oldInterest);
 
         // 4. 更新 Redis 中的“雪球”
-        redisService.saveInterestVector(Long.valueOf(userId), newInterestVector);
+//        redisService.saveInterestVector(Long.valueOf(userId), newInterestVector);
         log.info("用户 {} 兴趣雪球演化成功", userId);
     }
 

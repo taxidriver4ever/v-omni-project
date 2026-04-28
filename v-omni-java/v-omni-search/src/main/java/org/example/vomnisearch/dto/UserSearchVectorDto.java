@@ -12,7 +12,7 @@ import java.util.Date;
 @NoArgsConstructor
 public class UserSearchVectorDto {
     private String userId;
-    private byte[] vector;
+    private String mediaId;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
     private Date updateTime;

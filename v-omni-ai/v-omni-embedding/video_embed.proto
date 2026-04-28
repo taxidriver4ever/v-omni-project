@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package video_embed;
+
+service VideoEmbedService {
+    rpc GetVideoEmbedding (VideoEmbedRequest) returns (VideoEmbedResponse);
+}
+
+message VideoEmbedRequest {
+    string video_url = 1;
+    string title     = 2;
+}
+
+message VideoEmbedResponse {
+    repeated float embedding = 1;   // 512 维向量
+    string status            = 2;   // "ok" | "error"
+    string message           = 3;   // 错误信息或耗时统计
+}

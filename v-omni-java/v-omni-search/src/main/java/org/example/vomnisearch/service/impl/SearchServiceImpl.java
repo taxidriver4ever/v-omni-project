@@ -56,7 +56,7 @@ public class SearchServiceImpl implements SearchService {
 
     private final static String USER_HISTORY_TOPIC = "user-history-topic";
 
-    private final static String USER_FEATURE_UPDATE_TOPIC = "user-feature-update-topic";
+    private final static String USER_SEARCH_CONTENT_TOPIC = "search-content-topic";
 
     @Override
     public List<SearchMediaVo> searchVideo(@NotNull SearchMediaRequestDto searchMediaRequestDto,
@@ -83,7 +83,7 @@ public class SearchServiceImpl implements SearchService {
         if(searchMediaVos == null || searchMediaVos.isEmpty()) return Collections.emptyList();
         for (SearchMediaVo searchMediaVo : searchMediaVos) {
             String string = searchMediaVo.getMediaId();
-            String urlKey = "search:url:media-id:" + string;
+            String urlKey = "search:url:media_id:" + string;
             String redisUrl = stringRedisTemplate.opsForValue().get(urlKey);
             if(redisUrl != null) {
                 searchMediaVo.setMediaUrl(redisUrl);
@@ -93,16 +93,15 @@ public class SearchServiceImpl implements SearchService {
             stringRedisTemplate.opsForValue().setIfAbsent(urlKey, s, 29, TimeUnit.MINUTES);
             searchMediaVo.setMediaUrl(s);
         }
-        ByteBuffer buffer = ByteBuffer.allocate(vector.length * 4);
-        for (float f : vector) buffer.putFloat(f);
-        byte[] array = buffer.array();
+
+        if(userId == null) return searchMediaVos;
 
         UserSearchVectorDto userSearchVectorDto = new UserSearchVectorDto();
-        userSearchVectorDto.setVector(array);
         userSearchVectorDto.setUserId(String.valueOf(userId));
         userSearchVectorDto.setUpdateTime(new Date());
+        userSearchVectorDto.setMediaId(searchMediaVos.getFirst().getMediaId());
 
-        userSearchVectorKafkaTemplate.send(USER_FEATURE_UPDATE_TOPIC, userSearchVectorDto);
+        userSearchVectorKafkaTemplate.send(USER_SEARCH_CONTENT_TOPIC, userSearchVectorDto);
         return searchMediaVos;
     }
 

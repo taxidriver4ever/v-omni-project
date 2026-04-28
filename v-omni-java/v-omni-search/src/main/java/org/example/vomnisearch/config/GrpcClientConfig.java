@@ -1,8 +1,8 @@
-package org.example.vomnimedia.config;
+package org.example.vomnisearch.config;
 
 import io.grpc.ManagedChannel;
+import org.example.vomnisearch.grpc.*;
 import io.grpc.ManagedChannelBuilder;
-import org.example.vomnimedia.grpc.VideoEmbedServiceGrpc;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,15 +14,14 @@ public class GrpcClientConfig {
     private String aiServiceAddress;
 
     @Bean
-    public VideoEmbedServiceGrpc.VideoEmbedServiceBlockingStub videoEmbedStub() {
-        // 匹配 Python 端的 64MB 消息上限
-        int maxMessageSize = 64 * 1024 * 1024;
-
+    public RecommenderGrpc.RecommenderBlockingStub recommenderStub() {
+        // 手动构建 Channel，不受 Starter 自动装配限制
+        int maxMessageSize = 64 * 1024 * 1024; // 64MB
         ManagedChannel channel = ManagedChannelBuilder.forTarget(aiServiceAddress)
-                .usePlaintext() // 使用明文传输
+                .usePlaintext() // 对应你的 negotiation-type: plaintext
                 .maxInboundMessageSize(maxMessageSize)
                 .build();
 
-        return VideoEmbedServiceGrpc.newBlockingStub(channel);
+        return RecommenderGrpc.newBlockingStub(channel);
     }
 }

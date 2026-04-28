@@ -1,0 +1,24 @@
+# --- gRPC 基础 ---
+grpcio==1.60.0
+grpcio-tools==1.60.0
+
+# --- 深度学习核心 (建议先手动安装 torch) ---
+# torch 和 torchvision 建议匹配你的 CUDA 版本
+torch
+torchvision
+numpy>=1.24.0,<2.0.0
+Pillow
+
+# --- 视觉与检测 ---
+ultralytics>=8.1.0
+easyocr>=1.7.1
+
+# --- 文本与语音 ---
+sentence-transformers>=2.2.2
+faster-whisper>=1.0.0
+
+# --- 异步与工具 ---
+aiohttp>=3.9.0
+aiofiles>=23.2.0
+
+#pip install git+https://github.com/openai/CLIP.git

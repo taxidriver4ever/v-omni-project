@@ -1,0 +1,49 @@
+# --- 1. Python 环境与缓存 ---
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.project
+.pydevproject
+
+# --- 2. AI 模型权重与大数据 (非常重要) ---
+# 忽略所有权重文件，防止 git 提交数 GB 的数据
+weights/
+*.pt
+*.pth
+*.onnx
+*.bin
+*.model
+# 即使是 yolov8n.pt 这种较小的权重也建议忽略，让用户自行下载
+yolov8n.pt
+
+# --- 3. 视频处理生成的临时文件 ---
+# 忽略抽帧图片和提取的音频
+temp/
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.wav
+*.mp3
+
+# --- 4. 配置与敏感信息 ---
+.env
+*.log
+# 忽略 OS 生成的垃圾文件
+.DS_Store
+Thumbs.db
+
+# --- 5. gRPC 生成文件 ---
+# 建议忽略自动生成的代码（可选），因为它们可以通过 .proto 重新生成
+# video_embed_pb2.py
+# video_embed_pb2_grpc.py
+
+# --- 6. 编辑器配置 ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace

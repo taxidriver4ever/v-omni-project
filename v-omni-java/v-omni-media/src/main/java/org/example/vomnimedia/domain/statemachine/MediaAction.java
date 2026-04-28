@@ -100,28 +100,24 @@ public class MediaAction {
 
         // 1. 同时获取两路向量 (耗时 IO)
         float[] videoVectorRaw = getVideoVectorFromRedis(idStr);
-        float[] titleVectorRaw = getTitleVectorFromRedis(idStr);
-
 
         // 封面路径获取
         String coverPath = stringRedisTemplate.opsForValue().get("media:cover_path:id:" + id);
 
         // 只要有一路向量缺失，就无法满足双塔检索需求
-        if (videoVectorRaw == null || titleVectorRaw == null) {
-            log.warn("向量缺失 [视频: {}, 标题: {}]，放弃存储。ID: {}",
-                    videoVectorRaw != null, titleVectorRaw != null, id);
+        if (videoVectorRaw == null) {
+            log.warn("向量缺失 [视频]，放弃存储。ID: {}", id);
             return;
         }
 
 
         // 2. 耗时计算：转换格式 (放在事务外)
         List<Float> videoVector = convertToList(videoVectorRaw);
-        List<Float> titleVector = convertToList(titleVectorRaw);
 
 
         // 3. 调用代理方法执行事务
         try {
-            self.executePersistentTask(id, userId, title, videoVector, titleVector, coverPath);
+            self.executePersistentTask(id, userId, title, videoVector, coverPath);
         } catch (IOException e) {
             log.error("视频持久化任务失败，视频ID: {}, 错误原因: {}", id, e.getMessage());
             throw new RuntimeException(e);
@@ -145,7 +141,6 @@ public class MediaAction {
     @Transactional(rollbackFor = Exception.class)
     public void executePersistentTask(Long id, String userId, String title,
                                       List<Float> videoVector,
-                                      List<Float> titleVector,
                                       String coverPath) throws Exception {
 
         // 1. MySQL 操作：查询作者
@@ -175,7 +170,6 @@ public class MediaAction {
 
         // 设置双向量字段
         documentVectorMediaPo.setVideoEmbedding(videoVector); // 对应 video_embedding
-        documentVectorMediaPo.setTextEmbedding(titleVector);  // 对应 text_embedding
 
         // 3. MySQL 写入逻辑
         MediaPo mediaPo = new MediaPo();
@@ -194,16 +188,6 @@ public class MediaAction {
 
     private float[] getVideoVectorFromRedis(@NotNull String id) {
         byte[] data = byteRedisTemplate.opsForValue().get("media:video:vector:id:" + id);
-        float[] vector = null;
-        if (data != null) {
-            vector = new float[data.length / 4];
-            ByteBuffer.wrap(data).asFloatBuffer().get(vector);
-        }
-        return vector;
-    }
-
-    private float[] getTitleVectorFromRedis(@NotNull String id) {
-        byte[] data = byteRedisTemplate.opsForValue().get("media:title:vector:id:" + id);
         float[] vector = null;
         if (data != null) {
             vector = new float[data.length / 4];

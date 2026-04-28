@@ -4,7 +4,7 @@ spring:
   data:
     redis:
       host: localhost
-      port: 6379
+      port: 16379
       database: 0
       timeout: 2000ms
       lettuce:
@@ -17,18 +17,29 @@ spring:
       password: ${V_OMNI_REDIS_PASSWORD}
       username: ${V_OMNI_REDIS_USERNAME}
 
-  # Kafka（关键修复点）
+  # Kafka
   kafka:
     bootstrap-servers: localhost:19092
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       retries: 3
     consumer:
       group-id: v-omni-search-group
       auto-offset-reset: earliest
+      # 1. 禁用自动提交，改由我们代码控制
+      enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "org.example.vomnisearch.dto"
+        # 2. 增加消费者的生命体征检查间隔，防止转码太久被 Kafka 踢出组
+        max.poll.interval.ms: 900000 # 15分钟
+        # 3. 每次只拉 1 条，处理完再拿下一条，防止积压报错
+        max.poll.records: 1
+    listener:
+      # 4. 关键：设置监听器模式为手动立即提交
+      ack-mode: manual_immediate
 
   # MySQL
   datasource:

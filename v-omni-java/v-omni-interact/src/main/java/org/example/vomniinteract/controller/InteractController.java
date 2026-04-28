@@ -124,7 +124,6 @@ public class InteractController {
         Integer page = mediaCommentDto.getPage();
 
         if(rootId != null && !"0".equals(rootId)) {
-            // 这里你已经修正为根据 rootId 查询了，非常棒
             List<CommentVo> replies = documentCommentService.findRepliesByRootComments(Long.parseLong(rootId), page, 10);
             return MyResult.success(replies != null ? replies : Collections.emptyList());
         }

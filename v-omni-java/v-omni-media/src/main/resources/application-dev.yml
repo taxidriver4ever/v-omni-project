@@ -19,7 +19,6 @@ spring:
 
 
   # Kafka
-  # Kafka
   kafka:
     bootstrap-servers: localhost:19092
     producer:

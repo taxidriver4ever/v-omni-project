@@ -18,21 +18,30 @@ public class JwtInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        String token = request.getHeader("Authorization");
+        String authHeader = request.getHeader("Authorization");
 
-        // 如果有 Token 且不为空
-        if (token != null && !token.isEmpty()) {
-            try {
-                // 仅做解析，如果过期会抛出异常，这里可以捕获
-                Claims claims = jwtUtils.parseToken(token);
-                Long userId = claims.get("id", Long.class);
-                // 关键：存入 request 域
-                request.setAttribute("current_user_id", userId);
-            } catch (Exception e) {
-                // Token 无效或过期，这里不报错，直接放行（因为搜索接口是开放的）
-                log.debug("Token 解析失败，视为游客搜索");
+        // 1. 检查 Header 是否以 "Bearer " 开头
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            // 2. 截取 "Bearer " 之后的字符串 (索引 7 开始)
+            String token = authHeader.substring(7);
+
+            if (!token.isEmpty()) {
+                try {
+                    Claims claims = jwtUtils.parseToken(token);
+                    // 从标准字段 sub 中获取 ID
+                    String sub = claims.getSubject();
+
+                    if (sub != null) {
+                        Long userId = Long.valueOf(sub); // 因为你生成的 sub 是 String 类型的 ID
+                        request.setAttribute("current_user_id", userId);
+                        log.info("current user id is: {}", userId);
+                    }
+                } catch (Exception e) {
+                    log.warn("Token 解析失败: {}", e.getMessage());
+                }
             }
         }
-        return true; // 始终放行
+
+        return true;
     }
 }

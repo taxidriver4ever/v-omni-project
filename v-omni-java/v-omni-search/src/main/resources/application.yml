@@ -26,4 +26,3 @@ server:
 v-omni:
   auth:
     jwt-secret: ${V_OMNI_JWT_SECRET}
-  model-path: ${V_OMNI_MODEL_PATH}
