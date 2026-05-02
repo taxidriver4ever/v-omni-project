@@ -14,7 +14,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11video_embed.proto\x12\x0bvideo_embed\"5\n\x11VideoEmbedRequest\x12\x11\n\tvideo_url\x18\x01 \x01(\t\x12\r\n\x05title\x18\x02 \x01(\t\"H\n\x12VideoEmbedResponse\x12\x11\n\tembedding\x18\x01 \x03(\x02\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t2i\n\x11VideoEmbedService\x12T\n\x11GetVideoEmbedding\x12\x1e.video_embed.VideoEmbedRequest\x1a\x1f.video_embed.VideoEmbedResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11video_embed.proto\x12\x0bvideo_embed\"5\n\x11VideoEmbedRequest\x12\x11\n\tvideo_url\x18\x01 \x01(\t\x12\r\n\x05title\x18\x02 \x01(\t\"H\n\x12VideoEmbedResponse\x12\x11\n\tembedding\x18\x01 \x03(\x02\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"&\n\x10TextEmbedRequest\x12\x12\n\nquery_text\x18\x01 \x01(\t\"G\n\x11TextEmbedResponse\x12\x11\n\tembedding\x18\x01 \x03(\x02\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"4\n\x0bHistoryItem\x12\x11\n\tembedding\x18\x01 \x03(\x02\x12\x12\n\nbiz_labels\x18\x02 \x03(\x02\"D\n\x17LongTermInterestRequest\x12)\n\x07history\x18\x01 \x03(\x0b\x32\x18.video_embed.HistoryItem\"9\n\x10InterestCentroid\x12\x11\n\tembedding\x18\x01 \x03(\x02\x12\x12\n\nbiz_labels\x18\x02 \x03(\x02\"m\n\x18LongTermInterestResponse\x12\x30\n\tcentroids\x18\x01 \x03(\x0b\x32\x1d.video_embed.InterestCentroid\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"6\n\rShortTermItem\x12\x11\n\tembedding\x18\x01 \x03(\x02\x12\x12\n\nbiz_labels\x18\x02 \x03(\x02\"\x90\x01\n\x13UserInterestRequest\x12\x17\n\x0fquery_embedding\x18\x01 \x03(\x02\x12.\n\nshort_term\x18\x02 \x03(\x0b\x32\x1a.video_embed.ShortTermItem\x12\x30\n\tlong_term\x18\x03 \x03(\x0b\x32\x1d.video_embed.InterestCentroid\"y\n\x14UserInterestResponse\x12\x13\n\x0buser_vector\x18\x01 \x03(\x02\x12\x15\n\rshort_weights\x18\x02 \x03(\x02\x12\x14\n\x0clong_weights\x18\x03 \x03(\x02\x12\x0e\n\x06status\x18\x04 \x01(\t\x12\x0f\n\x07message\x18\x05 \x01(\t2i\n\x11VideoEmbedService\x12T\n\x11GetVideoEmbedding\x12\x1e.video_embed.VideoEmbedRequest\x1a\x1f.video_embed.VideoEmbedResponse2e\n\x10TextEmbedService\x12Q\n\x10GetTextEmbedding\x12\x1d.video_embed.TextEmbedRequest\x1a\x1e.video_embed.TextEmbedResponse2\xd4\x01\n\x10UserModelService\x12\x62\n\x13GetLongTermInterest\x12$.video_embed.LongTermInterestRequest\x1a%.video_embed.LongTermInterestResponse\x12\\\n\x15GetUserInterestVector\x12 .video_embed.UserInterestRequest\x1a!.video_embed.UserInterestResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -25,6 +25,28 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _globals['_VIDEOEMBEDREQUEST']._serialized_end=87
   _globals['_VIDEOEMBEDRESPONSE']._serialized_start=89
   _globals['_VIDEOEMBEDRESPONSE']._serialized_end=161
-  _globals['_VIDEOEMBEDSERVICE']._serialized_start=163
-  _globals['_VIDEOEMBEDSERVICE']._serialized_end=268
+  _globals['_TEXTEMBEDREQUEST']._serialized_start=163
+  _globals['_TEXTEMBEDREQUEST']._serialized_end=201
+  _globals['_TEXTEMBEDRESPONSE']._serialized_start=203
+  _globals['_TEXTEMBEDRESPONSE']._serialized_end=274
+  _globals['_HISTORYITEM']._serialized_start=276
+  _globals['_HISTORYITEM']._serialized_end=328
+  _globals['_LONGTERMINTERESTREQUEST']._serialized_start=330
+  _globals['_LONGTERMINTERESTREQUEST']._serialized_end=398
+  _globals['_INTERESTCENTROID']._serialized_start=400
+  _globals['_INTERESTCENTROID']._serialized_end=457
+  _globals['_LONGTERMINTERESTRESPONSE']._serialized_start=459
+  _globals['_LONGTERMINTERESTRESPONSE']._serialized_end=568
+  _globals['_SHORTTERMITEM']._serialized_start=570
+  _globals['_SHORTTERMITEM']._serialized_end=624
+  _globals['_USERINTERESTREQUEST']._serialized_start=627
+  _globals['_USERINTERESTREQUEST']._serialized_end=771
+  _globals['_USERINTERESTRESPONSE']._serialized_start=773
+  _globals['_USERINTERESTRESPONSE']._serialized_end=894
+  _globals['_VIDEOEMBEDSERVICE']._serialized_start=896
+  _globals['_VIDEOEMBEDSERVICE']._serialized_end=1001
+  _globals['_TEXTEMBEDSERVICE']._serialized_start=1003
+  _globals['_TEXTEMBEDSERVICE']._serialized_end=1104
+  _globals['_USERMODELSERVICE']._serialized_start=1107
+  _globals['_USERMODELSERVICE']._serialized_end=1319
 # @@protoc_insertion_point(module_scope)

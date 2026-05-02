@@ -5,17 +5,14 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomnisearch.dto.SearchHistoryDTO;
-import org.example.vomnisearch.dto.UserIdAndMediaIdDto;
 import org.example.vomnisearch.dto.UserSearchVectorDto;
-import org.example.vomnisearch.grpc.RecommendRequest;
-import org.example.vomnisearch.grpc.RecommendResponse;
-import org.example.vomnisearch.grpc.RecommenderGrpc;
-import org.example.vomnisearch.grpc.Vector;
+import org.example.vomnisearch.grpc.*;
 import org.example.vomnisearch.mapper.UserSearchHistoryMapper;
 import org.example.vomnisearch.po.DocumentUserBehaviorHistoryPo;
 import org.example.vomnisearch.po.UserSearchHistoryPo;
 import org.example.vomnisearch.service.*;
 import org.example.vomnisearch.util.SnowflakeIdWorker;
+import org.example.vomnisearch.util.VectorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -28,10 +25,12 @@ import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 /**
  * V-Omni 全功能消费者
- * 职能：热搜、搜索历史、行为存证、向量缩放(x3)、gRPC 画像进化
+ * 职能：热搜、搜索历史、行为存证、向量提取、gRPC 画像进化
+ * 逻辑：Global 池 (24条定长) + 步进计数器 (每5次触发)
  */
 @Component
 @Slf4j
@@ -50,22 +49,24 @@ public class SearchConsumer {
     @Resource
     private UserSearchHistoryMapper userSearchHistoryMapper;
     @Resource
-    private DocumentUserViewedService documentUserViewedService;
-    @Resource
     private DocumentUserBehaviorHistoryService documentUserBehaviorHistoryService;
     @Resource
     private DocumentUserProfileService documentUserProfileService;
     @Resource
-    private RecommenderGrpc.RecommenderBlockingStub recommenderStub;
+    private UserModelServiceGrpc.UserModelServiceBlockingStub userModelStub;
     @Resource
     private HotWordRedisService hotWordRedisService;
 
+    // Redis Key 定义
     private final static String K_GLOBAL_PREFIX = "behavior:global:k:user_id:";
-    private final static String K_CURRENT_PREFIX = "behavior:current:k:user_id:";
-    private final static String V_SNAPSHOT_PREFIX = "behavior:snapshot:v:user_id:";
+    private final static String V_GLOBAL_PREFIX = "behavior:global:v:user_id:";
+    private final static String COUNTER_PREFIX = "behavior:counter:user_id:";
 
-    private final static int TOTAL_SEQUENCE_LEN = 64;
+    // 架构参数
+    private final static int GLOBAL_CAPACITY = 24;
+    private final static int TRIGGER_STEP = 4;
     private final static int VECTOR_DIM = 512;
+    private final static int BIZ_DIM = 4;
 
     @PostConstruct
     public void init() {
@@ -76,11 +77,8 @@ public class SearchConsumer {
         }
     }
 
-    // ======================== Kafka 监听器部分 (全部归位) ========================
+    // ======================== Kafka 监听器部分 ========================
 
-    /**
-     * 1. 搜索内容向量消费
-     */
     @KafkaListener(topics = "search-content-topic", groupId = "v-omni-search-group")
     public void userFeatureConsume(@NotNull UserSearchVectorDto dto, Acknowledgment ack) {
         if (updateBehaviorSequence(dto.getUserId(), dto.getMediaId(), "SEARCH")) {
@@ -88,24 +86,6 @@ public class SearchConsumer {
         }
     }
 
-    /**
-     * 2. 视频点击/观看行为消费
-     */
-    @KafkaListener(topics = "handle-viewed-topic", groupId = "v-omni-search-group")
-    public void handleViewedTopic(@NotNull UserIdAndMediaIdDto dto, Acknowledgment ack) {
-        try {
-            documentUserViewedService.saveUserViewHistory(dto.getUserId(), dto.getMediaId());
-            if (updateBehaviorSequence(dto.getUserId(), dto.getMediaId(), "CLICK")) {
-                ack.acknowledge();
-            }
-        } catch (Exception e) {
-            log.error("点击行为消费异常: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * 3. 热词统计消费
-     */
     @KafkaListener(topics = "hot-word-topic", groupId = "v-omni-search-group")
     public void hotWordConsume(@NotNull String message, Acknowledgment ack) {
         try {
@@ -129,9 +109,6 @@ public class SearchConsumer {
         }
     }
 
-    /**
-     * 4. 搜索历史存证消费
-     */
     @KafkaListener(topics = "user-history-topic", groupId = "v-omni-search-group")
     public void userHistoryConsume(@NotNull SearchHistoryDTO dto, Acknowledgment ack) {
         try {
@@ -139,9 +116,11 @@ public class SearchConsumer {
             String keyword = dto.getKeyword();
             String redisKey = "search:keyword:user_id:" + userId;
             stringRedisTemplate.opsForZSet().add(redisKey, keyword, System.currentTimeMillis());
-            stringRedisTemplate.opsForZSet().removeRangeByScore(redisKey, 0, System.currentTimeMillis() - (7 * 86400000L));
+            Long size = stringRedisTemplate.opsForZSet().zCard(redisKey);
+            if (size != null && size > 24) {
+                stringRedisTemplate.opsForZSet().removeRange(redisKey, 0, size - 25);
+            }
             stringRedisTemplate.expire(redisKey, 30, TimeUnit.DAYS);
-
             Date now = new Date();
             UserSearchHistoryPo po = new UserSearchHistoryPo(snowflakeIdWorker.nextId(), userId, keyword, now, now);
             userSearchHistoryMapper.addUserSearchHistoryIfAbsentUpdateTime(po);
@@ -151,31 +130,43 @@ public class SearchConsumer {
         }
     }
 
-    // ======================== 核心逻辑处理部分 (带向量缩放) ========================
+    // ======================== 核心逻辑处理部分 ========================
 
     private boolean updateBehaviorSequence(String userId, String mediaId, String behaviorType) {
         try {
             if (userId == null || mediaId == null) return true;
 
-            // 获取向量：这里调用的 Service 内部已经做了 (float * 3.0f) 的缩放
-            byte[] mediaVector1024 = documentVectorMediaService.getVectorByMediaId(mediaId);
-            if (mediaVector1024 == null) return true;
+            // 1. 获取语义向量 (K) 与 业务特征向量 (V)
+            byte[] mediaVector512 = documentVectorMediaService.getVectorByMediaId(mediaId);
+            if (mediaVector512 == null) return true;
 
             float[] businessMeta = getBusinessMetaVector(mediaId);
-            byte[] snapshotVector1040 = combineVectorWithMeta(mediaVector1024, businessMeta);
+            byte[] vSnapshotVector = combineVectorWithMeta(mediaVector512, businessMeta);
 
+            // 2. 存入行为记录 (数据库)
             saveBehaviorRecord(userId, mediaId, behaviorType);
 
-            String kCurrent = K_CURRENT_PREFIX + userId;
             String kGlobal = K_GLOBAL_PREFIX + userId;
-            String vSnapshot = V_SNAPSHOT_PREFIX + userId;
+            String vGlobal = V_GLOBAL_PREFIX + userId;
+            String counterKey = COUNTER_PREFIX + userId;
 
-            byteRedisTemplate.opsForList().rightPush(vSnapshot, snapshotVector1040);
-            byteRedisTemplate.opsForList().trim(vSnapshot, -64, -1);
+            // 3. 直接存入 Global 池并进行定长裁剪 (保持最新的 24 条)
+            byteRedisTemplate.opsForList().rightPush(kGlobal, mediaVector512);
+            byteRedisTemplate.opsForList().trim(kGlobal, -GLOBAL_CAPACITY, -1);
 
-            processEvolutionAndDecay(userId, kCurrent, kGlobal, vSnapshot, mediaVector1024);
+            byteRedisTemplate.opsForList().rightPush(vGlobal, vSnapshotVector);
+            byteRedisTemplate.opsForList().trim(vGlobal, -GLOBAL_CAPACITY, -1);
 
-            expireKeys(kCurrent, kGlobal, vSnapshot);
+            // 4. 步进计数并触发演化逻辑
+            Long count = stringRedisTemplate.opsForValue().increment(counterKey);
+            stringRedisTemplate.expire(counterKey, 7, TimeUnit.DAYS); // 设置计数器 7 天过期
+
+            if (count != null && count % TRIGGER_STEP == 0) {
+                processEvolution(userId, kGlobal, vGlobal);
+            }
+
+            // 设置池子过期时间
+            expireKeys(kGlobal, vGlobal);
             return true;
         } catch (Exception e) {
             log.error("画像闭环更新失败: {}", e.getMessage());
@@ -183,100 +174,79 @@ public class SearchConsumer {
         }
     }
 
-    private void processEvolutionAndDecay(String userId, String kCurrent, String kGlobal, String vSnapshot, byte[] newK) {
-        Long currentSize = byteRedisTemplate.opsForList().size(kCurrent);
-        if (currentSize != null && currentSize >= 5L) {
-            log.info("🔥 触发 V-Omni 进化: 用户 {}", userId);
-            try {
-                float[] oldQ = documentUserProfileService.getUserQueryVector(userId);
-                float[][] longKV = documentUserProfileService.getLongTermKV(userId);
-                List<byte[]> shortK = byteRedisTemplate.opsForList().range(kCurrent, 0, -1);
-                List<byte[]> shortV = byteRedisTemplate.opsForList().range(vSnapshot, -5, -1);
+    private void processEvolution(String userId, String kGlobal, String vGlobal) {
+        // 获取 Global 池内容
+        List<byte[]> globalKList = byteRedisTemplate.opsForList().range(kGlobal, 0, -1);
+        long globalSize = (globalKList == null) ? 0 : globalKList.size();
 
-                float[] newQ = invokePythonRecommender(userId, oldQ, longKV, shortK, shortV);
-
-                if (newQ != null) {
-                    documentUserProfileService.updateUserProfile(userId, newQ, new Date());
-                }
-                moveCurrentToGlobal(kCurrent, kGlobal);
-            } catch (Exception e) {
-                log.error("演化链路异常", e);
-            }
-        }
-        byteRedisTemplate.opsForList().rightPush(kCurrent, newK);
-    }
-
-    private float[] invokePythonRecommender(String userId, float[] oldQ, float[][] longKV,
-                                            List<byte[]> shortK, List<byte[]> shortV) {
-        RecommendRequest.Builder builder = RecommendRequest.newBuilder()
-                .setUserId(userId)
-                .addQ5Videos(toVector(oldQ));
-
-        int longSize = (longKV != null) ? longKV.length : 0;
-        int shortSize = (shortK != null) ? shortK.size() : 0;
-        int currentTotal = longSize + shortSize;
-
-        if (longKV != null) {
-            for (float[] row : longKV) {
-                builder.addLongK(toVector(row));
-                builder.addLongV(toVector(row));
-            }
+        // 必须满足 24 条数据才发送给 Python
+        if (globalSize < (long) GLOBAL_CAPACITY) {
+            log.info("⏳ 用户 [{}] Global 池未满 (size={}/24)，跳过本次演化", userId, globalSize);
+            return;
         }
 
-        if (currentTotal < TOTAL_SEQUENCE_LEN) {
-            float[] zeroPadding = new float[VECTOR_DIM];
-            Vector zeroVec = toVector(zeroPadding);
-            for (int i = 0; i < (TOTAL_SEQUENCE_LEN - currentTotal); i++) {
-                builder.addLongK(zeroVec);
-                builder.addLongV(zeroVec);
-            }
-        }
-
-        if (shortK != null) shortK.forEach(b -> builder.addShortK(toVector(bytesToFloats(b))));
-        if (shortV != null) shortV.forEach(b -> builder.addShortV(toVector(bytesToFloats(b))));
-
+        log.info("🧠 用户 [{}] 满足触发条件 (计数达标且池子已满)，执行画像融合", userId);
         try {
-            RecommendResponse response = recommenderStub.getUserEmbedding(builder.build());
-            if ("success".equals(response.getStatus())) {
-                return Floats.toArray(response.getUserEmbeddingList());
+            List<byte[]> globalVList = byteRedisTemplate.opsForList().range(vGlobal, 0, -1);
+
+            // 获取当前 Query 向量
+            float[] currentQuery = documentUserProfileService.getUserQueryVector(userId);
+            if (isAllZerosStream(currentQuery)) {
+                // 兜底：用 Global 池里最新的一条行为作为 Query
+                byte[] latestK = globalKList.getLast();
+                currentQuery = VectorUtil.decodeFloatArray(latestK);
+            }
+
+            // 获取长期兴趣质心
+            List<InterestCentroid> longTermCentroids = documentUserProfileService.getInterestCentroids(userId);
+
+            // 调用 gRPC 发送 24 个向量及业务标签
+            float[] evolvedUserVec = invokePythonInterestFusion(currentQuery, globalKList, globalVList, longTermCentroids);
+
+            if (evolvedUserVec != null) {
+                documentUserProfileService.updateUserProfile(userId, evolvedUserVec, new Date());
+                log.info("✅ 用户 [{}] 画像进化成功", userId);
             }
         } catch (Exception e) {
-            log.error("gRPC 推理失败: {}", e.getMessage());
+            log.error("❌ gRPC 演化链路异常: ", e);
+        }
+    }
+
+    private float[] invokePythonInterestFusion(float[] query, List<byte[]> sK, List<byte[]> sV, List<InterestCentroid> lC) {
+        UserInterestRequest.Builder builder = UserInterestRequest.newBuilder();
+
+        if (query != null) {
+            for (float f : query) builder.addQueryEmbedding(f);
+        }
+
+        // 发送 Global 池中的 24 条数据
+        if (sK != null && sV != null) {
+            int limit = Math.min(sK.size(), sV.size());
+            for (int i = 0; i < limit; i++) {
+                ShortTermItem item = ShortTermItem.newBuilder()
+                        .addAllEmbedding(Floats.asList(bytesToFloats(sK.get(i))))
+                        .addAllBizLabels(Floats.asList(bytesToFloats(sV.get(i), VECTOR_DIM, BIZ_DIM)))
+                        .build();
+                builder.addShortTerm(item);
+            }
+        }
+
+        if (lC != null) {
+            builder.addAllLongTerm(lC);
+        }
+
+        try {
+            UserInterestResponse response = userModelStub.getUserInterestVector(builder.build());
+            if ("ok".equals(response.getStatus())) {
+                return Floats.toArray(response.getUserVectorList());
+            }
+        } catch (Exception e) {
+            log.error("gRPC 调用失败: {}", e.getMessage());
         }
         return null;
     }
 
-    private void moveCurrentToGlobal(String kCurrent, String kGlobal) {
-        List<byte[]> pending = byteRedisTemplate.opsForList().leftPop(kCurrent, 5);
-        if (pending == null) return;
-
-        List<byte[]> existingGlobal = byteRedisTemplate.opsForList().range(kGlobal, 0, -1);
-        List<byte[]> finalGlobal = new ArrayList<>();
-
-        if (existingGlobal != null) {
-            for (byte[] v : existingGlobal) finalGlobal.add(applyDecay(v, 0.9f, 0.01f));
-            if (finalGlobal.size() > 59) finalGlobal = finalGlobal.subList(finalGlobal.size() - 59, finalGlobal.size());
-        }
-        finalGlobal.addAll(pending);
-        byteRedisTemplate.delete(kGlobal);
-        byteRedisTemplate.opsForList().rightPushAll(kGlobal, finalGlobal);
-    }
-
-    private byte[] applyDecay(byte[] data, float factor, float minLimit) {
-        float[] vector = bytesToFloats(data);
-        for (int i = 0; i < vector.length; i++) vector[i] = Math.max(vector[i] * factor, minLimit);
-        ByteBuffer out = ByteBuffer.allocate(data.length);
-        for (float f : vector) out.putFloat(f);
-        return out.array();
-    }
-
-    private void executeUpsert(String word, String score) {
-        hotWordRedisService.incrementHotWord(word, Double.parseDouble(score));
-    }
-
-    private Vector toVector(float[] values) {
-        return Vector.newBuilder().addAllValues(Floats.asList(values)).build();
-    }
+    // ======================== 工具方法 ========================
 
     private float[] bytesToFloats(byte[] bytes) {
         if (bytes == null) return new float[VECTOR_DIM];
@@ -286,9 +256,18 @@ public class SearchConsumer {
         return floats;
     }
 
+    private float[] bytesToFloats(byte[] bytes, int offset, int length) {
+        if (bytes == null || bytes.length < (offset + length) * 4) return new float[length];
+        ByteBuffer buffer = ByteBuffer.wrap(bytes);
+        buffer.position(offset * 4);
+        float[] result = new float[length];
+        for (int i = 0; i < length; i++) result[i] = buffer.getFloat();
+        return result;
+    }
+
     private float[] getBusinessMetaVector(String mediaId) {
         float[] meta = new float[4];
-        meta[0] = 0.0f;
+        meta[0] = 0.0f; // placeholder
         meta[1] = getZSetLogCount("interaction:events:window:like:" + mediaId);
         meta[2] = getZSetLogCount("interaction:events:window:collection:" + mediaId);
         meta[3] = getZSetLogCount("interaction:events:window:comment:" + mediaId);
@@ -316,7 +295,17 @@ public class SearchConsumer {
         documentUserBehaviorHistoryService.saveBehavior(po);
     }
 
+    private void executeUpsert(String word, String score) {
+        hotWordRedisService.incrementHotWord(word, Double.parseDouble(score));
+    }
+
     private void expireKeys(String... keys) {
         for (String k : keys) byteRedisTemplate.expire(k, 7, TimeUnit.DAYS);
+    }
+
+    private boolean isAllZerosStream(float[] array) {
+        return IntStream.range(0, array.length)
+                .mapToDouble(i -> array[i])
+                .allMatch(f -> f == 0.0f);
     }
 }

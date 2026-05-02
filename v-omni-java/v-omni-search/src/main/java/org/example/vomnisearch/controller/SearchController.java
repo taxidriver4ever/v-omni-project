@@ -26,18 +26,6 @@ public class SearchController {
     private SearchService searchService;
 
     @Resource
-    private UserRecommendationRedisService redisService;
-
-    @Resource
-    private UserBloomFilterService userBloomFilterService;
-
-    @Resource
-    private KafkaTemplate<String, UserIdAndMediaIdDto> userIdAndMediaIdDtoKafkaTemplate;
-
-    @Resource
-    private DocumentVectorMediaService documentVectorMediaService;
-
-    @Resource
     private HotWordRedisService hotWordRedisService;
 
     @PostMapping("/hybrid/video")
@@ -90,22 +78,6 @@ public class SearchController {
         List<RecommendMediaVo> recommendMedia = searchService.getRecommendMedia(httpServletRequest);
         if(recommendMedia == null || recommendMedia.isEmpty()) return MyResult.success();
         return MyResult.success(recommendMedia);
-    }
-
-    @PostMapping("/leave/video")
-    public MyResult<Void> collectLeaveVideo(String mediaId) throws IOException {
-        if(mediaId == null || mediaId.isEmpty()) return MyResult.error(404,"没有该视频");
-        boolean available = documentVectorMediaService.availableMedia(mediaId);
-        if(!available) return MyResult.error(404,"没有该视频");
-        String userId = String.valueOf(SecurityUtils.getCurrentUserId());
-        redisService.addSeenIdToZSet(userId, mediaId);
-        RBloomFilter<String> bloomFilter = userBloomFilterService.getFilter(Long.valueOf(userId));
-        bloomFilter.add(mediaId);
-        UserIdAndMediaIdDto userIdAndMediaIdDto = new UserIdAndMediaIdDto();
-        userIdAndMediaIdDto.setUserId(userId);
-        userIdAndMediaIdDto.setMediaId(mediaId);
-        userIdAndMediaIdDtoKafkaTemplate.send("handle-viewed-topic", userIdAndMediaIdDto);
-        return MyResult.success();
     }
 
 }

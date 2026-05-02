@@ -6,7 +6,10 @@ import video_embed_pb2 as video__embed__pb2
 
 
 class VideoEmbedServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """─────────────────────────────────────────────────────────────────────────────
+    视频 Embedding 服务（供视频入库、离线处理使用）
+    ─────────────────────────────────────────────────────────────────────────────
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -22,7 +25,10 @@ class VideoEmbedServiceStub(object):
 
 
 class VideoEmbedServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """─────────────────────────────────────────────────────────────────────────────
+    视频 Embedding 服务（供视频入库、离线处理使用）
+    ─────────────────────────────────────────────────────────────────────────────
+    """
 
     def GetVideoEmbedding(self, request, context):
         """Missing associated documentation comment in .proto file."""
@@ -46,7 +52,10 @@ def add_VideoEmbedServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class VideoEmbedService(object):
-    """Missing associated documentation comment in .proto file."""
+    """─────────────────────────────────────────────────────────────────────────────
+    视频 Embedding 服务（供视频入库、离线处理使用）
+    ─────────────────────────────────────────────────────────────────────────────
+    """
 
     @staticmethod
     def GetVideoEmbedding(request,
@@ -62,5 +71,181 @@ class VideoEmbedService(object):
         return grpc.experimental.unary_unary(request, target, '/video_embed.VideoEmbedService/GetVideoEmbedding',
             video__embed__pb2.VideoEmbedRequest.SerializeToString,
             video__embed__pb2.VideoEmbedResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+
+class TextEmbedServiceStub(object):
+    """─────────────────────────────────────────────────────────────────────────────
+    文本 Embedding 服务（供搜索引擎使用 - 新增）
+    ─────────────────────────────────────────────────────────────────────────────
+    """
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.GetTextEmbedding = channel.unary_unary(
+                '/video_embed.TextEmbedService/GetTextEmbedding',
+                request_serializer=video__embed__pb2.TextEmbedRequest.SerializeToString,
+                response_deserializer=video__embed__pb2.TextEmbedResponse.FromString,
+                )
+
+
+class TextEmbedServiceServicer(object):
+    """─────────────────────────────────────────────────────────────────────────────
+    文本 Embedding 服务（供搜索引擎使用 - 新增）
+    ─────────────────────────────────────────────────────────────────────────────
+    """
+
+    def GetTextEmbedding(self, request, context):
+        """将用户的搜索词（Query）转换为 512 维向量，用于在 ES 中进行搜索
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_TextEmbedServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'GetTextEmbedding': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetTextEmbedding,
+                    request_deserializer=video__embed__pb2.TextEmbedRequest.FromString,
+                    response_serializer=video__embed__pb2.TextEmbedResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'video_embed.TextEmbedService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+
+
+ # This class is part of an EXPERIMENTAL API.
+class TextEmbedService(object):
+    """─────────────────────────────────────────────────────────────────────────────
+    文本 Embedding 服务（供搜索引擎使用 - 新增）
+    ─────────────────────────────────────────────────────────────────────────────
+    """
+
+    @staticmethod
+    def GetTextEmbedding(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/video_embed.TextEmbedService/GetTextEmbedding',
+            video__embed__pb2.TextEmbedRequest.SerializeToString,
+            video__embed__pb2.TextEmbedResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+
+class UserModelServiceStub(object):
+    """─────────────────────────────────────────────────────────────────────────────
+    用户兴趣模型服务（供推荐系统使用）
+    ─────────────────────────────────────────────────────────────────────────────
+    """
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.GetLongTermInterest = channel.unary_unary(
+                '/video_embed.UserModelService/GetLongTermInterest',
+                request_serializer=video__embed__pb2.LongTermInterestRequest.SerializeToString,
+                response_deserializer=video__embed__pb2.LongTermInterestResponse.FromString,
+                )
+        self.GetUserInterestVector = channel.unary_unary(
+                '/video_embed.UserModelService/GetUserInterestVector',
+                request_serializer=video__embed__pb2.UserInterestRequest.SerializeToString,
+                response_deserializer=video__embed__pb2.UserInterestResponse.FromString,
+                )
+
+
+class UserModelServiceServicer(object):
+    """─────────────────────────────────────────────────────────────────────────────
+    用户兴趣模型服务（供推荐系统使用）
+    ─────────────────────────────────────────────────────────────────────────────
+    """
+
+    def GetLongTermInterest(self, request, context):
+        """聚类用户历史行为，返回长期兴趣质心
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetUserInterestVector(self, request, context):
+        """融合长短期兴趣，返回当前用户兴趣向量
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_UserModelServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'GetLongTermInterest': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetLongTermInterest,
+                    request_deserializer=video__embed__pb2.LongTermInterestRequest.FromString,
+                    response_serializer=video__embed__pb2.LongTermInterestResponse.SerializeToString,
+            ),
+            'GetUserInterestVector': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetUserInterestVector,
+                    request_deserializer=video__embed__pb2.UserInterestRequest.FromString,
+                    response_serializer=video__embed__pb2.UserInterestResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'video_embed.UserModelService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+
+
+ # This class is part of an EXPERIMENTAL API.
+class UserModelService(object):
+    """─────────────────────────────────────────────────────────────────────────────
+    用户兴趣模型服务（供推荐系统使用）
+    ─────────────────────────────────────────────────────────────────────────────
+    """
+
+    @staticmethod
+    def GetLongTermInterest(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/video_embed.UserModelService/GetLongTermInterest',
+            video__embed__pb2.LongTermInterestRequest.SerializeToString,
+            video__embed__pb2.LongTermInterestResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def GetUserInterestVector(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/video_embed.UserModelService/GetUserInterestVector',
+            video__embed__pb2.UserInterestRequest.SerializeToString,
+            video__embed__pb2.UserInterestResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

@@ -1,85 +1,93 @@
 syntax = "proto3";
 
-package vomni;
+// 这里修改为你的 Java 项目包名
+package video_embed;
 
-// 根据你的项目结构调整
 option java_package = "org.example.vomnisearch.grpc";
 option java_multiple_files = true;
+option java_outer_classname = "VideoEmbedProto";
 
-service Recommender {
-  // 1. 实时获取用户推荐画像 (含不对称特征处理)
-  rpc GetUserEmbedding (RecommendRequest) returns (RecommendResponse);
-
-  // 2. 长期兴趣质心演化 (512维 K-Means 聚类)
-  rpc UpdateLongTermMatrix (UpdateMatrixRequest) returns (UpdateMatrixResponse);
-
-  // 3. CLIP 工具类
-  rpc GetImageEmbeddings (ImageRequest) returns (MultiVectorResponse);
-  rpc GetTextEmbedding (TextRequest) returns (VectorResponse);
+// ─────────────────────────────────────────────────────────────────────────────
+// 文本 Embedding 服务（供 Java 搜索引擎调用）
+// ─────────────────────────────────────────────────────────────────────────────
+service TextEmbedService {
+  // Java 调用此方法，将用户搜索词转为 512 维向量
+  rpc GetTextEmbedding (TextEmbedRequest) returns (TextEmbedResponse);
 }
 
-// ----------------- 推理相关 -----------------
-
-message RecommendRequest {
-  string user_id = 1;
-
-  // [0] 是上一个状态的 512D 用户画像 (用于 Query)
-  repeated Vector q_5_videos = 2;
-
-  // --- 短期兴趣 (灵敏头) ---
-  // Key: 1024D (视觉512 + 文本512)
-  repeated Vector short_k = 3;
-  // Value: 1028D (1024语义 + 4业务分)
-  repeated Vector short_v = 4;
-
-  // --- 长期兴趣 (死板头) ---
-  // Key: 512D (纯视频语义质心)
-  repeated Vector long_k = 5;
-  // Value: 512D (通常与 long_k 相同)
-  repeated Vector long_v = 6;
+message TextEmbedRequest {
+  string query_text = 1;
 }
 
-message RecommendResponse {
-  string status = 1;
-  repeated float user_embedding = 2; // 返回 512D 向量
-  string message = 3;
+message TextEmbedResponse {
+  repeated float embedding = 1;   // 512 维融合向量
+  string status            = 2;   // "ok" | "error"
+  string message           = 3;
 }
 
-// ----------------- 画像更新相关 -----------------
-
-message UpdateMatrixRequest {
-  string user_id = 1;
-  // 旧的 64 x 512 质心矩阵
-  repeated Vector old_centroids = 2;
-  // 本周新增的 N x 512 原始视频向量
-  repeated Vector new_behaviors = 3;
+// ─────────────────────────────────────────────────────────────────────────────
+// 视频 Embedding 服务（供视频入库使用）
+// ─────────────────────────────────────────────────────────────────────────────
+service VideoEmbedService {
+  rpc GetVideoEmbedding (VideoEmbedRequest) returns (VideoEmbedResponse);
 }
 
-message UpdateMatrixResponse {
-  string status = 1;
-  // 聚类后的新 64 x 512 质心矩阵
-  repeated Vector new_centroids = 2;
+message VideoEmbedRequest {
+  string video_url = 1;
+  string title     = 2;
 }
 
-// ----------------- 基础结构 -----------------
-
-message Vector {
-  repeated float values = 1;
+message VideoEmbedResponse {
+  repeated float embedding = 1;
+  string status            = 2;
+  string message           = 3;
 }
 
-message ImageRequest {
-  repeated bytes image_data = 1;
-  bool do_pooling = 2;
+// ─────────────────────────────────────────────────────────────────────────────
+// 用户兴趣模型服务（供推荐排序使用）
+// ─────────────────────────────────────────────────────────────────────────────
+service UserModelService {
+  rpc GetLongTermInterest (LongTermInterestRequest) returns (LongTermInterestResponse);
+  rpc GetUserInterestVector (UserInterestRequest) returns (UserInterestResponse);
 }
 
-message TextRequest {
-  string text = 1;
+// --- 以下是推荐系统相关的消息结构 ---
+
+message HistoryItem {
+  repeated float embedding  = 1;
+  repeated float biz_labels = 2;
 }
 
-message VectorResponse {
-  repeated float values = 1;
+message LongTermInterestRequest {
+  repeated HistoryItem history = 1;
 }
 
-message MultiVectorResponse {
-  repeated Vector vectors = 1;
+message InterestCentroid {
+  repeated float embedding  = 1;
+  repeated float biz_labels = 2;
+}
+
+message LongTermInterestResponse {
+  repeated InterestCentroid centroids = 1;
+  string status                       = 2;
+  string message                      = 3;
+}
+
+message ShortTermItem {
+  repeated float embedding  = 1;
+  repeated float biz_labels = 2;
+}
+
+message UserInterestRequest {
+  repeated float          query_embedding = 1;
+  repeated ShortTermItem  short_term      = 2;
+  repeated InterestCentroid long_term     = 3;
+}
+
+message UserInterestResponse {
+  repeated float user_vector = 1;
+  repeated float short_weights = 2;
+  repeated float long_weights  = 3;
+  string status  = 4;
+  string message = 5;
 }

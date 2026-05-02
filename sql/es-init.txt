@@ -27,13 +27,6 @@ PUT /vector_media_index
         "index": true,
         "similarity": "cosine",
         "index_options": { "type": "int8_hnsw", "m": 16, "ef_construction": 100 }
-      },
-      "text_embedding": {
-        "type": "dense_vector",
-        "dims": 512,
-        "index": true,
-        "similarity": "cosine",
-        "index_options": { "type": "int8_hnsw", "m": 16, "ef_construction": 100 }
       }
     }
   }
@@ -121,7 +114,7 @@ PUT /user_behavior_history_index
       "behavior_type": { "type": "keyword" },
       "behavior_vector": { 
         "type": "dense_vector", 
-        "dims": 1024, 
+        "dims": 512, 
         "index": false 
       }
     }

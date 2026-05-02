@@ -20,7 +20,7 @@ public class DocumentUserProfileServiceImpl implements DocumentUserProfileServic
 
     private static final String INDEX_NAME = "user_profile_index";
     private static final int VECTOR_DIM = 512;
-    private static final int CLUSTER_SIZE = 64;
+    private static final int CLUSTER_SIZE = 8;
 
     /**
      * 用户注册时调用：创建初始画像文档（采用随机冷启动策略）
@@ -28,7 +28,7 @@ public class DocumentUserProfileServiceImpl implements DocumentUserProfileServic
     @Override
     public void createProfileOnRegistration(String userId, Date registrationDate) {
         try {
-            // 1. 创建长期矩阵 (64 * 512)
+            // 1. 创建长期矩阵 (8 * 512)
             // 长期矩阵通常在演化逻辑触发前保持全 0 是安全的，因为它不直接用于 ES 的 Cosine 检索
             float[] zeroCluster = new float[CLUSTER_SIZE * VECTOR_DIM];
 
@@ -60,18 +60,18 @@ public class DocumentUserProfileServiceImpl implements DocumentUserProfileServic
      */
     private float[] generateColdStartVector(int dim) {
         float[] vector = new float[dim];
-        Random random = new Random();
-
-        for (int i = 0; i < dim; i++) {
-            // 产生 -0.01 到 0.01 之间的随机数
-            // 这种分布可以让新用户的初始推荐具有微小的随机差异
-            vector[i] = (random.nextFloat() - 0.5f) * 0.02f;
-        }
-
-        // 安全检查：万一全是 0（概率极低），强制首位偏移
-        if (calculateMagnitude(vector) == 0) {
-            vector[0] = 1e-6f;
-        }
+//        Random random = new Random();
+//
+//        for (int i = 0; i < dim; i++) {
+//            // 产生 -0.01 到 0.01 之间的随机数
+//            // 这种分布可以让新用户的初始推荐具有微小的随机差异
+//            vector[i] = (random.nextFloat() - 0.5f) * 0.02f;
+//        }
+//
+//        // 安全检查：万一全是 0（概率极低），强制首位偏移
+//        if (calculateMagnitude(vector) == 0) {
+//            vector[0] = 1e-6f;
+//        }
 
         return vector;
     }

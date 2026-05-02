@@ -42,12 +42,14 @@ public class MediaServiceImpl implements MediaService {
     private KafkaTemplate<String,UserIdAndMediaIdDto> userIdAndMediaIdDtoKafkaTemplate;
 
     @Override
-    public PreSignResponseVo generatePreSignature() {
-        Long userId = SecurityUtils.getCurrentUserId();
+    public PreSignResponseVo generatePreSignature(String userId) {
+//        Long userId = SecurityUtils.getCurrentUserId();
 
         Long id = identityService.getOrCreateUserIdByEmail();
 
-        MediaEventContext mediaEventContext = new MediaEventContext(id).with("userId", String.valueOf(userId));
+//        MediaEventContext mediaEventContext = new MediaEventContext(id).with("userId", String.valueOf(userId));
+
+        MediaEventContext mediaEventContext = new MediaEventContext(id).with("userId", userId);
 
         MediaState currentState = mediaTransitionService.sendEvent(mediaEventContext, MediaEvent.GET_PRE_SIGNATURE);
 

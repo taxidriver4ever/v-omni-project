@@ -41,13 +41,11 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
     private static final String FIELD_TITLE = "title";
     private static final String FIELD_AUTHOR = "author";
     private static final String FIELD_DELETED = "deleted";
-    private static final String FIELD_VIDEO_VECTOR = "videoEmbedding";
-    private static final String FIELD_TEXT_VECTOR = "textEmbedding";
+    private static final String FIELD_VIDEO_VECTOR = "video_embedding"; // 统一使用融合后的 512D 向量
 
-    // 权重配置：三路召回配比
-    private static final float WEIGHT_QUERY_MATCH = 0.3f;  // 文本关键词权重
-    private static final float WEIGHT_TEXT_VECTOR = 0.4f;   // 标题语义向量权重
-    private static final float WEIGHT_VIDEO_VECTOR = 0.5f;  // 视频画面向量权重
+    // 权重配置：混合检索配比
+    private static final float WEIGHT_QUERY_MATCH = 0.3f;   // 文本关键词权重
+    private static final float WEIGHT_VIDEO_VECTOR = 0.7f;  // 融合向量权重
 
     @Resource
     private MinioService minioService;
@@ -87,42 +85,28 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
     }
 
     /**
-     * 核心方法：多路混合搜索（文本 + 双向量）
+     * 核心方法：混合搜索（文本 + 融合向量）
      */
     @Override
     public List<SearchMediaVo> hybridSearch(String queryText, float[] queryVector, int page, int size) throws IOException {
-        // 1. 向量转换：ES Client KnnQuery 接收 List<Float>
         List<Float> vectorList = new ArrayList<>();
         if (queryVector != null) {
             for (float v : queryVector) vectorList.add(v);
         }
 
-        // 2. 基础过滤条件：必须是未删除的数据
         Query filterQuery = Query.of(f -> f.term(t -> t.field(FIELD_DELETED).value(false)));
 
-        // 3. 第一路：文本关键词匹配查询 (Boolean Query)
-        // 使用 boost 调整该路在整体评分中的权重
+        // 文本关键词匹配查询
         Query textMatchQuery = Query.of(q -> q.bool(b -> b
-                .should(s -> s.match(m -> m.field(FIELD_TITLE).query(queryText).boost(2.0f))) // 标题匹配更重要
+                .should(s -> s.match(m -> m.field(FIELD_TITLE).query(queryText).boost(2.0f)))
                 .should(s -> s.match(m -> m.field(FIELD_AUTHOR).query(queryText)))
                 .minimumShouldMatch("1")
                 .filter(filterQuery)
         ));
 
-        // 4. 第二路 & 第三路：双向量 KNN 检索
+        // 向量 KNN 检索 (单路融合向量)
         List<KnnQuery> knnQueries = new ArrayList<>();
         if (!vectorList.isEmpty()) {
-            // A. 标题语义向量路
-            knnQueries.add(KnnQuery.of(k -> k
-                    .field(FIELD_TEXT_VECTOR)
-                    .queryVector(vectorList)
-                    .k(size)
-                    .numCandidates(100)
-                    .boost(WEIGHT_TEXT_VECTOR)
-                    .filter(filterQuery)
-            ));
-
-            // B. 视频画面向量路
             knnQueries.add(KnnQuery.of(k -> k
                     .field(FIELD_VIDEO_VECTOR)
                     .queryVector(vectorList)
@@ -133,21 +117,19 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
             ));
         }
 
-        // 5. 执行搜索请求
         SearchRequest request = SearchRequest.of(s -> s
                 .index(INDEX)
                 .query(q -> q.bool(b -> b
                         .must(textMatchQuery)
-                        .boost(WEIGHT_QUERY_MATCH) // 设置文本路整体权重
+                        .boost(WEIGHT_QUERY_MATCH)
                 ))
-                .knn(knnQueries) // 注入多路 KNN 查询
+                .knn(knnQueries)
                 .from((page - 1) * size)
                 .size(size)
         );
 
         SearchResponse<DocumentVectorMediaPo> response = client.search(request, DocumentVectorMediaPo.class);
 
-        // 6. 结果映射转换
         return response.hits().hits().stream()
                 .map(hit -> {
                     DocumentVectorMediaPo po = hit.source();
@@ -205,41 +187,31 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
     }
 
     /**
-     * 为未登录用户或冷启动场景提供的随机推荐
-     * @param size 需要返回的视频数量 (如 14)
-     * @return 随机视频列表
+     * 随机推荐
      */
     @Override
     public List<RecommendMediaVo> recommendRandom(int size) throws IOException {
-        // 1. 构建过滤条件：只看没被删除的视频
         Query filterQuery = Query.of(f -> f.term(t -> t.field(FIELD_DELETED).value(false)));
 
-        // 2. 构建随机查询请求
-        // 使用 function_score 的 random_score 保证每次请求结果的随机性
         SearchRequest request = SearchRequest.of(s -> s
                 .index(INDEX)
                 .query(q -> q.functionScore(fs -> fs
                         .query(filterQuery)
-                        .functions(f -> f.randomScore(rs -> rs)) // 随机打分
-                        .boostMode(FunctionBoostMode.Replace)   // 完全用随机分代替相关性分
+                        .functions(f -> f.randomScore(rs -> rs))
+                        .boostMode(FunctionBoostMode.Replace)
                 ))
                 .size(size)
         );
 
-        // 3. 执行查询
         SearchResponse<DocumentVectorMediaPo> response = client.search(request, DocumentVectorMediaPo.class);
 
-        // 4. 封装结果 (由于代码重复，建议将封装逻辑提取成私有方法)
         return response.hits().hits().stream()
                 .map(Hit::source)
                 .filter(Objects::nonNull)
-                .map(this::convertToVo) // 提取出来的封装逻辑
+                .map(this::convertToVo)
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 提取出来的 VO 转换逻辑，供多个推荐方法公用
-     */
     private RecommendMediaVo convertToVo(DocumentVectorMediaPo po) {
         RecommendMediaVo vo = new RecommendMediaVo();
         vo.setMediaId(po.getId());
@@ -262,63 +234,44 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
             return Collections.emptyList();
         }
 
-        // 1. 获取近期已读 ID 列表（建议从 Redis ZSet 获取最近 500 个）
         List<String> excludeIds = redisService.getRecentSeenIds(userId, 500);
 
-        // 2. 转换向量格式
         List<Float> vectorList = new ArrayList<>();
         for (float v : interestVector) vectorList.add(v);
 
-        // 3. 核心改进：构建 ES 侧的“预过滤”条件
-        // 排除已删除 + 排除近期已看
         Query filterQuery = Query.of(f -> f.bool(b -> b
                 .must(t -> t.term(m -> m.field(FIELD_DELETED).value(false)))
                 .mustNot(m -> m.ids(i -> i.values(excludeIds)))
         ));
 
-        // 4. 构建多路 KNN 推荐
-        // 策略：k 值设大一点（比如 3 倍 size），给 Java 过滤留出余量
         int recallSize = size * 3;
-        List<KnnQuery> knnQueries = Arrays.asList(
-                KnnQuery.of(k -> k
-                        .field(FIELD_TEXT_VECTOR)
-                        .queryVector(vectorList)
-                        .k(recallSize) // 增大单路召回数
-                        .numCandidates(200) // 增加候选者数量提高准确度
-                        .boost(0.6f)
-                        .filter(filterQuery)),
-                KnnQuery.of(k -> k
-                        .field(FIELD_VIDEO_VECTOR)
-                        .queryVector(vectorList)
-                        .k(recallSize)
-                        .numCandidates(200)
-                        .boost(0.4f)
-                        .filter(filterQuery))
+
+        // 单路 KNN 召回 (基于融合画像)
+        KnnQuery videoKnn = KnnQuery.of(k -> k
+                .field(FIELD_VIDEO_VECTOR)
+                .queryVector(vectorList)
+                .k(recallSize)
+                .numCandidates(200)
+                .filter(filterQuery)
         );
 
-        // 5. 发起请求：请求的总量也要稍微多一点
         SearchRequest request = SearchRequest.of(s -> s
                 .index(INDEX)
-                .knn(knnQueries)
+                .knn(videoKnn)
                 .size(recallSize)
         );
 
         SearchResponse<DocumentVectorMediaPo> response = client.search(request, DocumentVectorMediaPo.class);
 
-        // 6. 最终过滤与截断
         return response.hits().hits().stream()
                 .map(Hit::source)
                 .filter(Objects::nonNull)
-                // 第二道防线：用全量布隆过滤器进行最后的判定
                 .filter(po -> !bloomFilter.contains(po.getId()))
                 .map(this::convertToVo)
-                .limit(size) // 👈 无论召回多少，最终只给前端 size (如 14) 个
+                .limit(size)
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 判断视频是否存在且未被逻辑删除
-     */
     @Override
     public boolean availableMedia(String mediaId) throws IOException {
         SearchResponse<Void> response = client.search(s -> s
@@ -327,7 +280,7 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
                                 .must(m -> m.ids(i -> i.values(mediaId)))
                                 .must(m -> m.term(t -> t.field(FIELD_DELETED).value(false)))
                         ))
-                        .size(0), // 只要 count，不需要 source
+                        .size(0),
                 Void.class
         );
         if (response.hits().total() != null) {
@@ -343,68 +296,48 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
         GetResponse<DocumentVectorMediaPo> response = client.get(g -> g
                         .index(INDEX)
                         .id(mediaId)
-                        // 直接调用 sourceIncludes，不用写 source(...)
-                        .sourceIncludes(FIELD_VIDEO_VECTOR, FIELD_TEXT_VECTOR),
+                        .sourceIncludes(FIELD_VIDEO_VECTOR), // 仅查询单个向量字段
                 DocumentVectorMediaPo.class
         );
 
         return response.source();
     }
 
-    /**
-     * 根据 mediaId 获取视频向量并拼接为 1024 维字节数组
-     * 顺序：[video_embedding(512) + text_embedding(512)]
-     */
     @Override
     public byte[] getVectorByMediaId(String mediaId) throws IOException {
         if (mediaId == null || mediaId.isBlank()) return null;
 
-        // 1. 发起 Get 请求，仅包含向量字段
         GetResponse<DocumentVectorMediaPo> response = client.get(g -> g
                         .index(INDEX)
                         .id(mediaId)
-                        .sourceIncludes(Arrays.asList(FIELD_VIDEO_VECTOR, FIELD_TEXT_VECTOR)),
+                        .sourceIncludes(FIELD_VIDEO_VECTOR), // 仅查询单个向量字段
                 DocumentVectorMediaPo.class
         );
 
         DocumentVectorMediaPo po = response.source();
-        if (po == null || po.getVideoEmbedding() == null || po.getTextEmbedding() == null) {
+        if (po == null || po.getVideoEmbedding() == null) {
             log.warn("MediaId: {} 向量数据不完整", mediaId);
             return null;
         }
 
         List<Float> vVec = po.getVideoEmbedding();
-        List<Float> tVec = po.getTextEmbedding();
 
-        if (vVec.size() != 512 || tVec.size() != 512) {
-            log.error("向量维度异常，预期512: video={}, text={}", vVec.size(), tVec.size());
+        if (vVec.size() != 512) {
+            log.error("向量维度异常，预期512: video={}", vVec.size());
             return null;
         }
 
-        // 2. 拼接并执行缩放 (Scale by 3)
-        // 1024 floats * 4 bytes = 4096 bytes
-        ByteBuffer buffer = ByteBuffer.allocate(1024 * 4);
-
-        // 设置缩放因子
+        // 512 floats * 4 bytes = 2048 bytes
+        ByteBuffer buffer = ByteBuffer.allocate(512 * 4);
         float scaleFactor = 3.0f;
 
-        // 顺序写入并实时计算
         for (Float f : vVec) {
-            buffer.putFloat(f * scaleFactor);
-        }
-        for (Float f : tVec) {
             buffer.putFloat(f * scaleFactor);
         }
 
         return buffer.array();
     }
 
-    /**
-     * 根据用户画像向量检索最相关的视频
-     * * @param userQueryVector 用户兴趣向量 (512维)
-     * @param size 返回数量
-     * @return 推荐视频列表
-     */
     @Override
     public List<RecommendMediaVo> searchByProfileVector(float[] userQueryVector, int size) throws IOException {
         if (userQueryVector == null || userQueryVector.length == 0) {
@@ -412,46 +345,30 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
             return recommendRandom(size);
         }
 
-        // 1. 转换格式：float[] -> List<Float>
         List<Float> vectorList = new ArrayList<>(userQueryVector.length);
         for (float v : userQueryVector) {
             vectorList.add(v);
         }
 
-        // 2. 基础过滤：必须是未删除的视频
         Query filterQuery = Query.of(f -> f.term(t -> t.field(FIELD_DELETED).value(false)));
 
-        // 3. 构建双路 KNN 召回
-        // 第一路：匹配标题语义 (权重 0.6)
-        KnnQuery textKnn = KnnQuery.of(k -> k
-                .field(FIELD_TEXT_VECTOR)
-                .queryVector(vectorList)
-                .k(size)
-                .numCandidates(100)
-                .boost(0.6f)
-                .filter(filterQuery)
-        );
-
-        // 第二路：匹配视频画面特征 (权重 0.4)
+        // 单路 KNN 根据画像召回
         KnnQuery videoKnn = KnnQuery.of(k -> k
                 .field(FIELD_VIDEO_VECTOR)
                 .queryVector(vectorList)
                 .k(size)
                 .numCandidates(100)
-                .boost(0.4f)
                 .filter(filterQuery)
         );
 
-        // 4. 发起混合搜索请求
         SearchRequest request = SearchRequest.of(s -> s
                 .index(INDEX)
-                .knn(Arrays.asList(textKnn, videoKnn))
+                .knn(videoKnn)
                 .size(size)
         );
 
         SearchResponse<DocumentVectorMediaPo> response = client.search(request, DocumentVectorMediaPo.class);
 
-        // 5. 结果封装
         return response.hits().hits().stream()
                 .map(Hit::source)
                 .filter(Objects::nonNull)

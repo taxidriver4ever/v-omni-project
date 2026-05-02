@@ -32,8 +32,8 @@ public class MediaController {
     private MinioService minioService;
 
     @PostMapping("/pre-sign")
-    public MyResult<PreSignResponseVo> generatePreSignature() throws Exception {
-        PreSignResponseVo preSignResponseVo = mediaService.generatePreSignature();
+    public MyResult<PreSignResponseVo> generatePreSignature(String userId) throws Exception {
+        PreSignResponseVo preSignResponseVo = mediaService.generatePreSignature(userId);
         MediaState state = MediaState.ERROR;
         if(preSignResponseVo != null) {
             state = preSignResponseVo.getMediaState();
@@ -60,7 +60,9 @@ public class MediaController {
 
         if (!exists) return MyResult.error(404,"视频文件尚未上传完成，请稍后再试");
 
-        String userId = String.valueOf(SecurityUtils.getCurrentUserId());
+//        String userId = String.valueOf(SecurityUtils.getCurrentUserId());
+
+        String userId = req.getUserId();
         req.setUserId(userId);
         publishTemplate.send("video-process-topic", req);
         return MyResult.success();

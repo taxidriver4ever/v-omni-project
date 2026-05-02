@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package video_embed;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 视频 Embedding 服务（供视频入库、离线处理使用）
+// ─────────────────────────────────────────────────────────────────────────────
+service VideoEmbedService {
+    rpc GetVideoEmbedding (VideoEmbedRequest) returns (VideoEmbedResponse);
+}
+
+message VideoEmbedRequest {
+    string video_url = 1;
+    string title     = 2;
+}
+
+message VideoEmbedResponse {
+    repeated float embedding = 1;   // 512 维向量
+    string status            = 2;   // "ok" | "error"
+    string message           = 3;   // 错误信息或耗时统计
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 文本 Embedding 服务（供搜索引擎使用 - 新增）
+// ─────────────────────────────────────────────────────────────────────────────
+service TextEmbedService {
+    // 将用户的搜索词（Query）转换为 512 维向量，用于在 ES 中进行搜索
+    rpc GetTextEmbedding (TextEmbedRequest) returns (TextEmbedResponse);
+}
+
+message TextEmbedRequest {
+    string query_text = 1;          // 用户的搜索关键词
+}
+
+message TextEmbedResponse {
+    repeated float embedding = 1;   // 512 维融合向量
+    string status            = 2;   // "ok" | "error"
+    string message           = 3;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 用户兴趣模型服务（供推荐系统使用）
+// ─────────────────────────────────────────────────────────────────────────────
+service UserModelService {
+    // 聚类用户历史行为，返回长期兴趣质心
+    rpc GetLongTermInterest (LongTermInterestRequest) returns (LongTermInterestResponse);
+
+    // 融合长短期兴趣，返回当前用户兴趣向量
+    rpc GetUserInterestVector (UserInterestRequest) returns (UserInterestResponse);
+}
+
+// ── GetLongTermInterest ───────────────────────────────────────────────────────
+message HistoryItem {
+    repeated float embedding  = 1;  // 512 维视频 embedding
+    repeated float biz_labels = 2;  // 4 维业务标签
+}
+
+message LongTermInterestRequest {
+    repeated HistoryItem history = 1;   // 用户历史行为列表（N 条）
+}
+
+message InterestCentroid {
+    repeated float embedding  = 1;  // 兴趣质心（512 维）
+    repeated float biz_labels = 2;  // 业务质心（4 维）
+}
+
+message LongTermInterestResponse {
+    repeated InterestCentroid centroids = 1;    // K 个兴趣质心
+    string status                       = 2;
+    string message                      = 3;
+}
+
+// ── GetUserInterestVector ─────────────────────────────────────────────────────
+message ShortTermItem {
+    repeated float embedding  = 1;  // 512 维
+    repeated float biz_labels = 2;  // 4 维
+}
+
+message UserInterestRequest {
+    repeated float          query_embedding = 1;    // 当前候选视频 embedding (512)
+    repeated ShortTermItem  short_term      = 2;    // 短期序列（最多 24 条）
+    repeated InterestCentroid long_term     = 3;    // 长期质心（来自 GetLongTermInterest）
+}
+
+message UserInterestResponse {
+    repeated float user_vector = 1;     // 融合后用户兴趣向量（512 维）
+    repeated float short_weights = 2;   // 短期注意力权重（可视化用）
+    repeated float long_weights  = 3;   // 长期注意力权重（可视化用）
+    string status  = 4;
+    string message = 5;
+}

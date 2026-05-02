@@ -46,7 +46,7 @@ class LongShortUserModel(nn.Module):
 
         # 4. 注意力机制超参数
         # 短期位置偏置：设置为可学习参数，范围 0~5.0。相比原来的 0~2.0 增加了对序列位置的敏感度
-        self.position_bias = nn.Parameter(torch.linspace(0.0, 5.0, max_len))
+        self.position_bias = nn.Parameter(torch.linspace(0.0, 20.0, max_len))
         # 缩放因子 (Scale)：使用标准的 sqrt(d_k)，防止点积结果过大导致 Softmax 梯度消失
         self.temp_scale = np.sqrt(dim)
         self.long_term_scale = np.sqrt(dim)
@@ -132,61 +132,35 @@ class LongShortUserModel(nn.Module):
         # 过一层 LayerNorm，约束方差，抹平样本间的极端值波动
         fused_out = self.norm(combined)
 
-        # ==========================================
-        # 阶段 4: 推理期监控面板
-        # ==========================================
-        if not self.training:
-            self._debug_print(q_current, fused_out)
+        # # ==========================================
+        # # 阶段 4: 推理期监控面板
+        # # ==========================================
+        # if not self.training:
+        #     self._debug_print(q_current, fused_out)
 
         return fused_out, s_w, l_w
 
-    def _debug_print(self, q_current: torch.Tensor, fused_out: torch.Tensor):
-        """内部诊断工具：在非训练状态下，监控模型特征变换的健康度"""
-        # 放宽打印限制，防止 Tensor 被折叠
-        torch.set_printoptions(threshold=10_000, linewidth=200, precision=4, sci_mode=False)
-
-        # 转移到 CPU 并转为 Numpy 以便后续可能的复杂数值分析
-        q_np = q_current[0].detach().cpu().numpy()
-        out_np = fused_out[0].detach().cpu().numpy()
-
-        # 计算输入输出的余弦相似度，衡量特征方向的偏移量
-        cos_sim = F.cosine_similarity(q_current, fused_out).mean().item()
-
-        print("\n" + "📊" * 10 + " 用户模型数值诊断 " + "📊" * 10)
-        print(f"Input  Norm: {np.linalg.norm(q_np):.4f}")
-        print(f"Output Norm: {np.linalg.norm(out_np):.4f} (期望值应接近 22.6)")
-        print(f"CosSim (Q vs Out): {cos_sim:.4f} (期望值在 0.85~0.95 之间)")
-
-        # 相似度过高意味着模型没有学进去新的历史/业务特征，发生了“信号短路”
-        if cos_sim > 0.99:
-            print("⚠️ 警告：信号方向与输入过近，模型可能依然比较固执！")
-
-        print("-" * 60 + "\n")
-        # 恢复 PyTorch 默认打印配置，避免污染外部环境
-        torch.set_printoptions(profile='default')
-
-
-# --- 生产模拟测试脚本 ---
-def production_test():
-    model = LongShortUserModel()
-    model.eval()  # 切换至推理模式，触发 debug_print
-
-    # 构造假数据测试前向传播是否跑通
-    q = torch.randn(1, USER_MODEL_DIM)
-
-    sk = torch.randn(1, USER_MODEL_MAX_SHORT, USER_MODEL_DIM)
-    sv_biz = torch.rand(1, USER_MODEL_MAX_SHORT, USER_MODEL_BIZ_DIM)
-    sv = torch.cat([sk, sv_biz], dim=-1)  # 拼凑 516 维
-
-    lk = torch.randn(1, 8, USER_MODEL_DIM)
-    lv_biz = torch.rand(1, 8, USER_MODEL_BIZ_DIM)
-    lv = torch.cat([lk, lv_biz], dim=-1)
-
-    mask = torch.ones(1, USER_MODEL_MAX_SHORT, dtype=torch.bool)
-
-    with torch.no_grad():
-        f_out, s_w, l_w = model(q, sk, sv, lk, lv, short_mask=mask)
-
-
-if __name__ == "__main__":
-    production_test()
+    # def _debug_print(self, q_current: torch.Tensor, fused_out: torch.Tensor):
+    #     """内部诊断工具：在非训练状态下，监控模型特征变换的健康度"""
+    #     # 放宽打印限制，防止 Tensor 被折叠
+    #     torch.set_printoptions(threshold=10_000, linewidth=200, precision=4, sci_mode=False)
+    #
+    #     # 转移到 CPU 并转为 Numpy 以便后续可能的复杂数值分析
+    #     q_np = q_current[0].detach().cpu().numpy()
+    #     out_np = fused_out[0].detach().cpu().numpy()
+    #
+    #     # 计算输入输出的余弦相似度，衡量特征方向的偏移量
+    #     cos_sim = F.cosine_similarity(q_current, fused_out).mean().item()
+    #
+    #     print("\n" + "📊" * 10 + " 用户模型数值诊断 " + "📊" * 10)
+    #     print(f"Input  Norm: {np.linalg.norm(q_np):.4f}")
+    #     print(f"Output Norm: {np.linalg.norm(out_np):.4f} (期望值应接近 22.6)")
+    #     print(f"CosSim (Q vs Out): {cos_sim:.4f} (期望值在 0.85~0.95 之间)")
+    #
+    #     # 相似度过高意味着模型没有学进去新的历史/业务特征，发生了“信号短路”
+    #     if cos_sim > 0.99:
+    #         print("⚠️ 警告：信号方向与输入过近，模型可能依然比较固执！")
+    #
+    #     print("-" * 60 + "\n")
+    #     # 恢复 PyTorch 默认打印配置，避免污染外部环境
+    #     torch.set_printoptions(profile='default')

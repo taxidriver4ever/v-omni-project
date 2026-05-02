@@ -32,9 +32,6 @@ public class DocumentVectorMediaPo {
     @JsonProperty("video_embedding")
     private List<Float> videoEmbedding; // 存放视频画面向量
 
-    @JsonProperty("text_embedding")
-    private List<Float> textEmbedding;  // 存放标题文字向量
-
     @JsonProperty("avatar_path")
     private String avatarPath;
 

@@ -7,21 +7,21 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.example.vomnisearch.grpc.InterestCentroid;
 
 import java.nio.ByteBuffer;
-import java.util.Base64;
-import java.util.Date;
+import java.util.*;
 
 /**
  * 用户画像持久化对象
- * 适配 Elasticsearch 存储规范：
- * 1. 使用 @JsonProperty 映射下划线字段
- * 2. 使用 Base64 编解码处理 binary 类型的 cluster_vectors
+ * 适配 8*512 纯向量架构（无业务维度）
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@JsonIgnoreProperties(ignoreUnknown = true) // 忽略 ES 结果中未在类中定义的额外字段
+@Slf4j
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class DocumentUserProfilePo {
 
     @JsonProperty("user_id")
@@ -34,13 +34,9 @@ public class DocumentUserProfilePo {
     @JsonProperty("update_time")
     private Date updateTime;
 
-    // 业务逻辑使用的原始数组，不直接序列化
     @JsonIgnore
-    private float[] clusterVectors;
+    private float[] clusterVectors; // 存储 8 * 512 = 4096 个浮点数
 
-    /**
-     * 序列化：将 float[] 转为 Base64 字符串存入 ES 的 binary 字段
-     */
     @JsonProperty("cluster_vectors")
     public String getClusterVectorsBase64() {
         if (clusterVectors == null) return null;
@@ -51,9 +47,6 @@ public class DocumentUserProfilePo {
         return Base64.getEncoder().encodeToString(buffer.array());
     }
 
-    /**
-     * 反序列化：将 ES 中的 Base64 字符串还原为 Java 的 float[]
-     */
     @JsonProperty("cluster_vectors")
     public void setClusterVectorsFromBase64(String base64) {
         if (base64 == null || base64.isEmpty()) return;
@@ -66,24 +59,51 @@ public class DocumentUserProfilePo {
             }
             this.clusterVectors = floats;
         } catch (Exception e) {
-            // 记录异常，防止因为个别数据格式问题导致整个 Kafka 消费者挂掉
+            log.error("解析用户 {} 的质心向量失败", userId, e);
             this.clusterVectors = null;
         }
     }
 
-    /**
-     * 辅助方法：将扁平化的数组还原为 64x512 矩阵
-     * 必须添加 @JsonIgnore，否则 Jackson 会将其序列化为 "reshapedMatrix" 字段导致 ES 报错
-     */
+    // DocumentUserProfilePo.java 核心修改部分
+
     @JsonIgnore
-    public float[][] getReshapedMatrix() {
-        if (clusterVectors == null || clusterVectors.length != 64 * 512) {
-            return new float[0][0];
+    public List<InterestCentroid> getReshapedCentroids() {
+        // 8 行 * 512 维 = 4096
+        int expectedLen = 8 * 512;
+
+        if (clusterVectors == null || clusterVectors.length != expectedLen) {
+            log.warn("用户 {} 长期矩阵长度异常: {}, 期待 {}", userId,
+                    clusterVectors == null ? 0 : clusterVectors.length, expectedLen);
+            return createZeroCentroids();
         }
-        float[][] matrix = new float[64][512];
-        for (int i = 0; i < 64; i++) {
-            System.arraycopy(clusterVectors, i * 512, matrix[i], 0, 512);
+
+        List<InterestCentroid> centroids = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            int start = i * 512;
+            float[] emb = new float[512];
+            System.arraycopy(clusterVectors, start, emb, 0, 512);
+
+            // 注意：这里只构建带 Embedding 的 Builder，BizLabels 留给 Service 层动态填充
+            centroids.add(InterestCentroid.newBuilder()
+                    .addAllEmbedding(com.google.common.primitives.Floats.asList(emb))
+                    .build());
         }
-        return matrix;
+        return centroids;
+    }
+    /**
+     * 兜底逻辑：创建 8 个 512 维的全零质心，防止模型计算崩溃
+     */
+    private List<InterestCentroid> createZeroCentroids() {
+        List<InterestCentroid> zeroList = new ArrayList<>();
+        Float[] zeroArray = new Float[512];
+        Arrays.fill(zeroArray, 0.0f);
+        List<Float> zeroListFloats = Arrays.asList(zeroArray);
+
+        for (int i = 0; i < 8; i++) {
+            zeroList.add(InterestCentroid.newBuilder()
+                    .addAllEmbedding(zeroListFloats)
+                    .build());
+        }
+        return zeroList;
     }
 }
