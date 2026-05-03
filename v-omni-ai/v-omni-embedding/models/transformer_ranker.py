@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-
 class TransformerRanker(nn.Module):
 
     def __init__(self, emb_dim=512, nhead=8):

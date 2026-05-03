@@ -1,192 +1,314 @@
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
+import torch.optim as optim
+import random
 
-# --- 业务级全局常量定义 ---
-USER_MODEL_DIM = 512  # 模型主干特征的维度 (语义空间的标准宽度)
-USER_MODEL_BIZ_DIM = 4  # 附加业务特征的维度 (如: 活跃度、消费等级等离散指标)
-USER_MODEL_MAX_SHORT = 24  # 短期序列的最大窗口长度
+# 定义 11 个精细档位
+ACTION_SPACE = np.linspace(0, 1, 11)
 
 
-class LongShortUserModel(nn.Module):
-    """
-    长短期用户兴趣融合模型
-    职责: 接收用户当前态(Q)与历史长短序列(K,V)，通过注意力机制提取上下文，
-          并与业务特征融合，输出一个兼顾“当前意图”与“历史偏好”的综合表征。
-    """
+# ==========================================
+# 阶段 1：模拟包含“互动率奖惩”的训练数据
+# ==========================================
+def generate_mock_offline_data(num_samples=25000):
+    print(f"🚀 [阶段 1] 正在模拟日志：调整奖惩平衡，激发模型积极性...")
+    buffer = []
+    for _ in range(num_samples):
+        saturation = random.uniform(0, 1)
+        similarity = random.uniform(0.5, 1)
+        vtr_diff = random.uniform(-0.5, 0.5)
+        state = np.array([saturation, similarity, vtr_diff], dtype=np.float32)
 
-    def __init__(
-            self,
-            dim: int = USER_MODEL_DIM,
-            biz_dim: int = USER_MODEL_BIZ_DIM,
-            max_len: int = USER_MODEL_MAX_SHORT,
-    ):
-        super().__init__()  # 注册为 PyTorch 的标准 Module
-        self.dim = dim  # 基础语义维度 (512)
-        self.v_dim = dim + biz_dim  # Value 向量的实际宽度 (516)
+        action_idx = random.randint(0, len(ACTION_SPACE) - 1)
+        alpha = ACTION_SPACE[action_idx]
 
-        # 1. 核心映射层 (转接头)
-        # 负责接收 516 维的混合特征，将其重新投影回 512 维，实现业务特征与语义特征的深度交叉
-        self.output_layer = nn.Linear(self.v_dim, dim)
+        # 计算疲劳得分
+        fatigue_score = (saturation + similarity) * 0.5 - vtr_diff
 
-        # 2. 层归一化 (稳压器)
-        # 保证经过线性变换和残差相加后，特征向量的模长能稳定在 sqrt(512) ≈ 22.6 附近，防止梯度爆炸
-        self.norm = nn.LayerNorm(dim)
+        # 1. 基础奖励：调大权重，让模型更看重完播表现
+        base_reward = vtr_diff * 10.0
 
-        # 3. 专家级冷启动初始化 (Soft Identity Initialization)
-        with torch.no_grad():  # 初始化阶段无需计算梯度
-            # a. 将权重左侧 dim×dim 部分设为单位矩阵
-            nn.init.eye_(self.output_layer.weight[:, :self.dim])
-            # b. 核心改动：乘以 0.5 权重。
-            # 理由：防止在初始状态下 Q(当前意图) 的信号过载，给模型留出融合历史信息和业务特征的“学习余量”
-            self.output_layer.weight.data[:, :self.dim] *= 0.5
-            # c. 偏置清零，右侧 biz_dim 部分保留系统默认的随机微小值，由模型自驱动学习
-            nn.init.zeros_(self.output_layer.bias)
+        # 2. 互动因子 (真正的核心调整)
+        interact_factor = 0
 
-        # 4. 注意力机制超参数
-        # 短期位置偏置：设置为可学习参数，范围 0~5.0。相比原来的 0~2.0 增加了对序列位置的敏感度
-        self.position_bias = nn.Parameter(torch.linspace(0.0, 5.0, max_len))
-        # 缩放因子 (Scale)：使用标准的 sqrt(d_k)，防止点积结果过大导致 Softmax 梯度消失
-        self.temp_scale = np.sqrt(dim)
-        self.long_term_scale = np.sqrt(dim)
+        if fatigue_score < 0.4:
+            # 【用户上头区】：鼓励高 Alpha
+            # 如果此时推用户喜欢的 (Alpha大)，额外加分
+            if alpha > 0.7:
+                interact_factor = 8.0 * alpha
+            else:
+                interact_factor = -2.0  # 如果用户上头你却推多样化，稍微给点小惩罚（浪费机会）
 
-    def _get_attention(
-            self,
-            q: torch.Tensor,  # [Batch, dim]
-            k: torch.Tensor,  # [Batch, SeqLen, dim]
-            v: torch.Tensor,  # [Batch, SeqLen, v_dim]
-            bias: torch.Tensor | None,  # [SeqLen]
-            scale: float,  # float
-            mask: torch.Tensor | None = None,  # [Batch, SeqLen] (True表示有效，False表示Padding)
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        elif fatigue_score > 0.7:
+            # 【用户疲劳区】：严惩高 Alpha
+            if alpha > 0.5:
+                # 触发互动率暴跌，给一个固定的猛烈打击
+                interact_factor = -15.0
+            else:
+                # 给了多样性，奖励“挽救行为”
+                interact_factor = 5.0
 
-        # 将 Q 扩展维度以进行批量的矩阵乘法运算：[Batch, dim] -> [Batch, 1, dim]
-        q_ext = q[:, None, :]
+        else:
+            # 【平稳期】
+            interact_factor = 2.0 if 0.3 <= alpha <= 0.6 else -1.0
 
-        # 计算 Q 和 K 的点积相似度，并立即进行 Scale 缩放
-        # k.transpose(-1, -2) 将 K 转置为 [Batch, dim, SeqLen]
-        # 结果 scores 维度为 [Batch, 1, SeqLen]
-        scores = torch.matmul(q_ext, k.transpose(-1, -2)) / scale
+        reward = base_reward + interact_factor
 
-        # 叠加位置偏置 (利用广播机制，自动加到每个 Batch 的 SeqLen 维度上)
-        if bias is not None:
-            scores = scores + bias
+        # 3. 限制范围，保护梯度稳定
+        reward = np.clip(reward, -20.0, 20.0)
 
-        # 处理掩码 (Padding Mask)
-        if mask is not None:
-            # ~mask[:, None, :] 取反并扩展维度对齐 scores -> [Batch, 1, SeqLen]
-            pad_mask = ~mask[:, None, :]
-            # 将填充位置的得分设为负无穷，Softmax 后权重将严格为 0
-            scores = scores.masked_fill(pad_mask, float("-inf"))
+        # 终止信号逻辑
+        done = 1.0 if fatigue_score > 0.85 and alpha > 0.7 else 0.0
 
-        # 通过 Softmax 转化为概率分布 (权重矩阵)
-        weights = F.softmax(scores, dim=-1)
-        # 兜底安全策略：如果全序列被 Mask，Softmax 会产生 NaN，这里将其强转为 0.0
-        weights = torch.nan_to_num(weights, nan=0.0)
+        next_state = (state + np.random.normal(0, 0.02, 3)).astype(np.float32)
+        buffer.append((state, action_idx, reward, next_state, done))
 
-        # 加权聚合 Value 矩阵：[Batch, 1, SeqLen] x [Batch, SeqLen, v_dim] -> [Batch, 1, v_dim]
-        context = torch.matmul(weights, v)
+    return buffer
 
-        # squeeze(1) 移除多余的维度 -> [Batch, v_dim]
-        return context.squeeze(1), weights
 
-    def forward(
-            self,
-            q_current: torch.Tensor,  # [Batch, dim]
-            sk: torch.Tensor,  # [Batch, max_short, dim]
-            sv: torch.Tensor,  # [Batch, max_short, v_dim]
-            lk: torch.Tensor,  # [Batch, max_long, dim]
-            lv: torch.Tensor,  # [Batch, max_long, v_dim]
-            short_mask: torch.Tensor | None = None,  # [Batch, max_short]
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-
-        # ==========================================
-        # 阶段 1: 提取多粒度上下文
-        # ==========================================
-        # 短期上下文 (包含业务特征, v_dim 维度)，带有强烈的时序位置偏置
-        s_ctx, s_w = self._get_attention(
-            q_current, sk, sv, bias=self.position_bias, scale=self.temp_scale, mask=short_mask
-        )
-        # 长期上下文 (同样为 v_dim 维度)，纯语义相似度匹配，无位置干预
-        l_ctx, l_w = self._get_attention(
-            q_current, lk, lv, bias=None, scale=self.long_term_scale, mask=None
+# ==========================================
+# 阶段 2：Q 网络 (依然是 3 维输入)
+# ==========================================
+class VOmniFineQNetwork(nn.Module):
+    def __init__(self, action_dim):
+        super(VOmniFineQNetwork, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(3, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, action_dim)
         )
 
-        # ==========================================
-        # 阶段 2: 兴趣融合与特征加工
-        # ==========================================
-        # 静态权重融合：85% 侧重短期即时需求，15% 兼顾长期底色
-        fused_context = 0.85 * s_ctx + 0.15 * l_ctx
-
-        # 将 516 维的混合特征，通过带特殊初始化的 Linear 层降维，交叉提炼成 512 维
-        transformed = self.output_layer(fused_context)
-
-        # ==========================================
-        # 阶段 3: 软残差与标准化
-        # ==========================================
-        # Soft Residual Connection (软残差连接)
-        # 核心逻辑：降低 q_current 的比重(0.5)，迫使网络高度重视 transformed 提取的历史与业务特征
-        combined = transformed + 0.5 * q_current
-
-        # 过一层 LayerNorm，约束方差，抹平样本间的极端值波动
-        fused_out = self.norm(combined)
-
-        # ==========================================
-        # 阶段 4: 推理期监控面板
-        # ==========================================
-        if not self.training:
-            self._debug_print(q_current, fused_out)
-
-        return fused_out, s_w, l_w
-
-    def _debug_print(self, q_current: torch.Tensor, fused_out: torch.Tensor):
-        """内部诊断工具：在非训练状态下，监控模型特征变换的健康度"""
-        # 放宽打印限制，防止 Tensor 被折叠
-        torch.set_printoptions(threshold=10_000, linewidth=200, precision=4, sci_mode=False)
-
-        # 转移到 CPU 并转为 Numpy 以便后续可能的复杂数值分析
-        q_np = q_current[0].detach().cpu().numpy()
-        out_np = fused_out[0].detach().cpu().numpy()
-
-        # 计算输入输出的余弦相似度，衡量特征方向的偏移量
-        cos_sim = F.cosine_similarity(q_current, fused_out).mean().item()
-
-        print("\n" + "📊" * 10 + " 用户模型数值诊断 " + "📊" * 10)
-        print(f"Input  Norm: {np.linalg.norm(q_np):.4f}")
-        print(f"Output Norm: {np.linalg.norm(out_np):.4f} (期望值应接近 22.6)")
-        print(f"CosSim (Q vs Out): {cos_sim:.4f} (期望值在 0.85~0.95 之间)")
-
-        # 相似度过高意味着模型没有学进去新的历史/业务特征，发生了“信号短路”
-        if cos_sim > 0.99:
-            print("⚠️ 警告：信号方向与输入过近，模型可能依然比较固执！")
-
-        print("-" * 60 + "\n")
-        # 恢复 PyTorch 默认打印配置，避免污染外部环境
-        torch.set_printoptions(profile='default')
+    def forward(self, x):
+        return self.fc(x)
 
 
-# --- 生产模拟测试脚本 ---
-def production_test():
-    model = LongShortUserModel()
-    model.eval()  # 切换至推理模式，触发 debug_print
+def train_offline_rl(buffer, epochs=500):  # 建议先从 500 轮开始观察
+    print("🧠 [阶段 2] 开始训练 (训练端已注入互动惩罚)...")
+    action_dim = len(ACTION_SPACE)
+    model = VOmniFineQNetwork(action_dim)
 
-    # 构造假数据测试前向传播是否跑通
-    q = torch.randn(1, USER_MODEL_DIM)
+    # 调低学习率，并改用对异常值更鲁棒的 Huber Loss (SmoothL1)
+    optimizer = optim.Adam(model.parameters(), lr=0.0005)
+    loss_fn = nn.SmoothL1Loss()
 
-    sk = torch.randn(1, USER_MODEL_MAX_SHORT, USER_MODEL_DIM)
-    sv_biz = torch.rand(1, USER_MODEL_MAX_SHORT, USER_MODEL_BIZ_DIM)
-    sv = torch.cat([sk, sv_biz], dim=-1)  # 拼凑 516 维
+    states = torch.tensor(np.array([x[0] for x in buffer]))
+    actions = torch.tensor([x[1] for x in buffer], dtype=torch.int64).unsqueeze(1)
+    rewards = torch.tensor([x[2] for x in buffer], dtype=torch.float32)
+    next_states = torch.tensor(np.array([x[3] for x in buffer]))
+    dones = torch.tensor([x[4] for x in buffer], dtype=torch.float32)
 
-    lk = torch.randn(1, 8, USER_MODEL_DIM)
-    lv_biz = torch.rand(1, 8, USER_MODEL_BIZ_DIM)
-    lv = torch.cat([lk, lv_biz], dim=-1)
+    for epoch in range(epochs):
+        # 当前 Q 值
+        q_values = model(states).gather(1, actions).squeeze()
 
-    mask = torch.ones(1, USER_MODEL_MAX_SHORT, dtype=torch.bool)
+        # 目标 Q 值
+        with torch.no_grad():
+            max_next_q = model(next_states).max(1)[0]
+            target_q = rewards + 0.95 * max_next_q * (1 - dones)
 
+        loss = loss_fn(q_values, target_q)
+        optimizer.zero_grad()
+        loss.backward()
+
+        # 增加梯度裁剪，彻底解决 Loss 爆炸问题
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+        optimizer.step()
+
+        if (epoch + 1) % 100 == 0:
+            print(f"   Epoch {epoch + 1}/{epochs} | Loss: {loss.item():.6f}")
+
+    return model
+
+
+# ==========================================
+# 阶段 3：测试 (输入保持不变)
+# ==========================================
+def test_fine_inference(model):
+    print("\n🎯 [阶段 3] 测试：模型是否学会了“为了互动率而克制”...")
+    test_cases = [
+        {"name": "极度上头", "state": [0.1, 0.4, 0.6]},  # 应该推荐高 Alpha
+        {"name": "中度疲劳", "state": [0.6, 0.7, 0.1]},  # 应该收敛到中 Alpha
+        {"name": "极度厌倦", "state": [0.9, 0.9, -0.3]}  # 应该推荐极低 Alpha (Alpha=0.0或0.1)
+    ]
+
+    model.eval()
     with torch.no_grad():
-        f_out, s_w, l_w = model(q, sk, sv, lk, lv, short_mask=mask)
+        for case in test_cases:
+            state_tensor = torch.tensor(case["state"], dtype=torch.float32).unsqueeze(0)
+            q_values = model(state_tensor).numpy()[0]
+            best_action_idx = np.argmax(q_values)
+            recommended_alpha = ACTION_SPACE[best_action_idx]
+
+            print(f"👤 {case['name']} -> 决策 Alpha: {recommended_alpha:.1f}")
+            # 如果 Alpha 在极度厌倦下变小了，说明惩罚生效了
 
 
 if __name__ == "__main__":
-    production_test()
+    data = generate_mock_offline_data(25000)
+    model = train_offline_rl(data, epochs=20000)  # 1000轮通常就能看到非常稳定的结果
+    test_fine_inference(model)
+
+# import torch
+# import torch.nn as nn
+# import torch.optim as optim
+#
+#
+# class SimpleDLRM(nn.Module):
+#     def __init__(self, dense_in_features, sparse_vocab_sizes, embedding_dim):
+#         super(SimpleDLRM, self).__init__()
+#
+#         self.embedding_dim = embedding_dim
+#         self.num_sparse = len(sparse_vocab_sizes)
+#         # 总共有多少个向量参与内积：1个连续向量 + N个离散向量
+#         self.num_vectors = 1 + self.num_sparse
+#
+#         # ==========================================
+#         # 1. 连续特征处理：Bottom MLP
+#         # ==========================================
+#         self.bottom_mlp = nn.Sequential(
+#             nn.Linear(dense_in_features, 64),
+#             nn.ReLU(),
+#             nn.Linear(64, 32),
+#             nn.ReLU(),
+#             nn.Linear(32, embedding_dim)  # 最后一层必须输出 embedding_dim
+#         )
+#
+#         # ==========================================
+#         # 2. 离散特征处理：Embedding Tables
+#         # ==========================================
+#         self.embeddings = nn.ModuleList([
+#             nn.Embedding(vocab_size, embedding_dim)
+#             for vocab_size in sparse_vocab_sizes
+#         ])
+#
+#         # ==========================================
+#         # 3. 顶部融合处理：Top MLP
+#         # ==========================================
+#         # 计算交互层输出的维度：N个向量两两内积产生 N*(N-1)/2 个数值
+#         interaction_dim = (self.num_vectors * (self.num_vectors - 1)) // 2
+#         # Top MLP 输入 = 原始连续向量的维度 + 交互数值的数量
+#         top_in_features = embedding_dim + interaction_dim
+#
+#         self.top_mlp = nn.Sequential(
+#             nn.Linear(top_in_features, 64),
+#             nn.ReLU(),
+#             nn.Linear(64, 32),
+#             nn.ReLU(),
+#             nn.Linear(32, 1),
+#             nn.Sigmoid()  # 输出 0~1 的点击概率
+#         )
+#
+#     def forward(self, dense_x, sparse_x, debug=False):
+#         # 1. 连续数据提炼
+#         v_dense = self.bottom_mlp(dense_x)  # Shape: [Batch, embed_dim]
+#
+#         # 2. 离散数据查表
+#         v_sparse_list = []
+#         for i in range(self.num_sparse):
+#             # 获取第 i 个离散特征的 ID，并查表
+#             v_i = self.embeddings[i](sparse_x[:, i])
+#             v_sparse_list.append(v_i)
+#
+#         # 3. 交互层 (Interaction) - 最核心的数学逻辑
+#         # 把连续向量和所有离散向量堆叠在一起
+#         # v_dense 需要增加一个维度变成 [Batch, 1, embed_dim]
+#         v_dense_expanded = v_dense.unsqueeze(1)
+#         v_sparse_stacked = torch.stack(v_sparse_list, dim=1)  # Shape: [Batch, num_sparse, embed_dim]
+#
+#         # 所有的向量坐在同一张桌子上 (Total vectors: 1 + num_sparse)
+#         all_vectors = torch.cat([v_dense_expanded, v_sparse_stacked], dim=1)
+#
+#         # 矩阵乘法计算两两内积: Q * K^T
+#         interactions = torch.bmm(all_vectors, all_vectors.transpose(1, 2))  # Shape: [Batch, num_vectors, num_vectors]
+#
+#         # 提取上三角矩阵的值（去掉对角线自己的内积，和重复的下三角）
+#         rows, cols = torch.triu_indices(self.num_vectors, self.num_vectors, offset=1)
+#         interactions_flat = interactions[:, rows, cols]  # Shape: [Batch, interaction_dim]
+#
+#         # 4. 特征大拼接 (Concatenation)
+#         # 将 最初的连续特征向量 + 所有的内积数值 拼接
+#         concat_features = torch.cat([v_dense, interactions_flat], dim=1)
+#
+#         # 5. 顶层预测
+#         output = self.top_mlp(concat_features)  # Shape: [Batch, 1]
+#
+#         # --- 打印观察室 ---
+#         if debug:
+#             print("\n" + "=" * 40)
+#             print("🚀 前向传播 Debug 观察室")
+#             print("=" * 40)
+#             print(f"1. 输入的连续数据:\t {dense_x.shape}")
+#             print(f"2. 翻译后的连续向量 (v_dense): {v_dense.shape}  <-- Bottom MLP 输出")
+#             print(
+#                 f"3. 参加会议的总向量数:\t {all_vectors.shape[1]} 个 (1连续 + {self.num_sparse}离散), 每个长 {self.embedding_dim}")
+#             print(f"4. 内积矩阵的结果:\t {interactions.shape} <-- 包含了所有两两碰撞的火花")
+#             print(f"5. 提取出的交互数值:\t {interactions_flat.shape} <-- {self.num_vectors}*({self.num_vectors}-1)/2")
+#             print(
+#                 f"6. Top MLP 的长特征输入:\t {concat_features.shape} <-- {self.embedding_dim} + {interactions_flat.shape[1]}")
+#             print(f"7. 最终的点赞预测概率:\t {output.shape}")
+#             print("=" * 40 + "\n")
+#
+#         return output
+#
+#
+# # ==========================================
+# # 测试流水线
+# # ==========================================
+# if __name__ == "__main__":
+#     # --- 1. 模拟环境配置 ---
+#     BATCH_SIZE = 8
+#     DENSE_DIMS = 13  # 13维连续特征 (比如视频完播率、用户活跃度等)
+#     SPARSE_VOCABS = [1000, 500, 200]  # 3个离散特征，词表大小分别为 1000, 500, 200 (比如 UserID, 视频类别ID, 设备类型)
+#     EMBEDDING_DIM = 16  # 为了方便看，维度设为16
+#
+#     model = SimpleDLRM(
+#         dense_in_features=DENSE_DIMS,
+#         sparse_vocab_sizes=SPARSE_VOCABS,
+#         embedding_dim=EMBEDDING_DIM
+#     )
+#
+#     # 定义损失函数 (BCE) 和优化器
+#     criterion = nn.BCELoss()
+#     optimizer = optim.Adam(model.parameters(), lr=0.01)
+#
+#     # --- 2. 模拟数据生成 ---
+#     # 连续数据：通常要归一化，这里用 rand 生成 0-1 之间的数据
+#     mock_dense_x = torch.rand(BATCH_SIZE, DENSE_DIMS)
+#     # 离散数据：生成对应词表范围内的整数 ID
+#     mock_sparse_x = torch.stack([
+#         torch.randint(0, SPARSE_VOCABS[0], (BATCH_SIZE,)),
+#         torch.randint(0, SPARSE_VOCABS[1], (BATCH_SIZE,)),
+#         torch.randint(0, SPARSE_VOCABS[2], (BATCH_SIZE,))
+#     ], dim=1)
+#     # 真实标签：模拟用户是否点赞 (0 或 1)
+#     mock_y = torch.randint(0, 2, (BATCH_SIZE, 1)).float()
+#
+#     # --- 3. 运行一次推理 (看清内部结构) ---
+#     print("【步骤 A：单次推理观测】")
+#     model.eval()  # 开启评估模式
+#     with torch.no_grad():
+#         predictions = model(mock_dense_x, mock_sparse_x, debug=True)
+#         print(f"第一条数据的预测点赞概率: {predictions[0].item():.4f}\n")
+#
+#     # --- 4. 运行训练循环 (看模型如何进化) ---
+#     print("【步骤 B：训练过程观测】")
+#     model.train()  # 开启训练模式
+#     epochs = 5
+#     for epoch in range(epochs):
+#         optimizer.zero_grad()
+#
+#         # 前向传播 (关闭 debug 避免刷屏)
+#         outputs = model(mock_dense_x, mock_sparse_x, debug=False)
+#
+#         # 计算损失
+#         loss = criterion(outputs, mock_y)
+#
+#         # 反向传播 (此时 Top MLP, Bottom MLP 和 Embedding 都在更新！)
+#         loss.backward()
+#         optimizer.step()
+#
+#         print(f"Epoch [{epoch + 1}/{epochs}] | Loss: {loss.item():.4f}")
