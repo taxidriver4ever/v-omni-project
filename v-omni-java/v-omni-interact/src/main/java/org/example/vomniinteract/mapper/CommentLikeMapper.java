@@ -2,6 +2,8 @@ package org.example.vomniinteract.mapper;
 
 import org.apache.ibatis.annotations.*;
 
+import java.util.List;
+
 @Mapper
 public interface CommentLikeMapper {
     @Select("SELECT id FROM u_comment_like " +
@@ -42,5 +44,11 @@ public interface CommentLikeMapper {
             """)
     Long selectIdByUserIdAndCommentId(@Param("userId") Long userId,
                                       @Param("commentId") Long commentId);
+
+
+    @Select("SELECT user_id "+
+            "FROM u_comment_like " +
+            "WHERE comment_id = #{commentId} ")
+    List<Long> selectUserIdByCommentId(@Param("commentId")Long commentId);
 }
 

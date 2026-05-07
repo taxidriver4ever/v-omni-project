@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.vomniinteract.po.DocumentVectorMediaPo;
 import org.example.vomniinteract.service.DocumentVectorMediaService;
 import co.elastic.clients.json.JsonData;
+import org.example.vomniinteract.vo.RecommendMediaVo;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -46,6 +47,43 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
     }
 
     /**
+     * 根据 ID 获取推荐视图对象
+     * 实现了从持久层 PO 到展示层 VO 的转换，过滤掉大体积的向量数据
+     */
+    @Override
+    public RecommendMediaVo getRecommendVoById(String id) {
+        // 1. 调用已有的 getById 方法获取 ES 文档
+        DocumentVectorMediaPo po = this.getById(id);
+
+        if (po == null) {
+            log.warn("未能在 ES 中找到 ID 为 {} 的视频文档", id);
+            return null;
+        }
+
+        // 2. 转换为 VO
+        RecommendMediaVo vo = new RecommendMediaVo();
+        vo.setMediaId(po.getId());
+        vo.setTitle(po.getTitle());
+        vo.setUserId(po.getUserId());
+        vo.setAuthor(po.getAuthor());
+
+        // 处理计数字段，防止空指针（虽然 ES 默认通常有值）
+        vo.setLikeCount(po.getLikeCount() != null ? po.getLikeCount() : 0);
+        vo.setCommentCount(po.getCommentCount() != null ? po.getCommentCount() : 0);
+        vo.setCollectionCount(po.getCollectionCount() != null ? po.getCollectionCount() : 0);
+
+        // 路径转换逻辑：假设你的 VO 需要的是完整的 URL
+        // 这里你可以根据实际的域名配置进行拼接
+        vo.setCoverUrl(po.getCoverPath());
+        vo.setAvatarUrl(po.getAvatarPath());
+
+        // 注意：mediaUrl 在你的 PO 中似乎没有对应字段，可能需要从其他服务获取或拼接
+        // vo.setMediaUrl("https://cdn.vomni.com/video/" + po.getId());
+
+        return vo;
+    }
+
+    /**
      * 局部更新方法
      */
     @Override
@@ -69,8 +107,10 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
             Map<String, JsonData> params = new HashMap<>();
 
             fields.forEach((fieldName, change) -> {
-                // 脚本逻辑：ctx._source.like_count += params.like_count
-                scriptSource.append("ctx._source.").append(fieldName).append(" += params.").append(fieldName).append("; ");
+                // 更加严谨的脚本：如果字段不存在则初始化，存在则累加
+                scriptSource.append("ctx._source.").append(fieldName)
+                        .append(" = (ctx._source.").append(fieldName).append(" ?: 0) + params.")
+                        .append(fieldName).append("; ");
                 params.put(fieldName, JsonData.of(change));
             });
 
@@ -85,7 +125,7 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
                                                     .params(params)
                                             )
                                     )
-                                    // 若文档不存在不处理，防止因延迟导致的脏数据
+                                    // 若文档不存在则不执行，防止产生没有视频信息的脏计数文档
                                     .upsert(null)
                             )
                     )

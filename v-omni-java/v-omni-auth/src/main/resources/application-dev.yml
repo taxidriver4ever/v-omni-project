@@ -27,7 +27,7 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       retries: 3
     consumer:
-      group-id: v-omni-media-group
+      group-id: v-omni-auth-group
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       # 建议同步修改消费者（如果你在这个项目里也消费这个 Topic）

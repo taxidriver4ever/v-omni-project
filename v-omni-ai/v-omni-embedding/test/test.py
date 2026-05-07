@@ -1,156 +1,286 @@
-import numpy as np
+# import numpy as np
+# import torch
+# import torch.nn as nn
+# import torch.optim as optim
+# import random
+#
+# # 定义 11 个精细档位
+# ACTION_SPACE = np.linspace(0, 1, 11)
+#
+#
+# # ==========================================
+# # 阶段 1：模拟包含“互动率奖惩”的训练数据
+# # ==========================================
+# def generate_mock_offline_data(num_samples=25000):
+#     print(f"🚀 [阶段 1] 正在模拟日志：调整奖惩平衡，激发模型积极性...")
+#     buffer = []
+#     for _ in range(num_samples):
+#         saturation = random.uniform(0, 1)
+#         similarity = random.uniform(0.5, 1)
+#         vtr_diff = random.uniform(-0.5, 0.5)
+#         state = np.array([saturation, similarity, vtr_diff], dtype=np.float32)
+#
+#         action_idx = random.randint(0, len(ACTION_SPACE) - 1)
+#         alpha = ACTION_SPACE[action_idx]
+#
+#         # 计算疲劳得分
+#         fatigue_score = (saturation + similarity) * 0.5 - vtr_diff
+#
+#         # 1. 基础奖励：调大权重，让模型更看重完播表现
+#         base_reward = vtr_diff * 10.0
+#
+#         # 2. 互动因子 (真正的核心调整)
+#         interact_factor = 0
+#
+#         if fatigue_score < 0.4:
+#             # 【用户上头区】：鼓励高 Alpha
+#             # 如果此时推用户喜欢的 (Alpha大)，额外加分
+#             if alpha > 0.7:
+#                 interact_factor = 8.0 * alpha
+#             else:
+#                 interact_factor = -2.0  # 如果用户上头你却推多样化，稍微给点小惩罚（浪费机会）
+#
+#         elif fatigue_score > 0.7:
+#             # 【用户疲劳区】：严惩高 Alpha
+#             if alpha > 0.5:
+#                 # 触发互动率暴跌，给一个固定的猛烈打击
+#                 interact_factor = -15.0
+#             else:
+#                 # 给了多样性，奖励“挽救行为”
+#                 interact_factor = 5.0
+#
+#         else:
+#             # 【平稳期】
+#             interact_factor = 2.0 if 0.3 <= alpha <= 0.6 else -1.0
+#
+#         reward = base_reward + interact_factor
+#
+#         # 3. 限制范围，保护梯度稳定
+#         reward = np.clip(reward, -20.0, 20.0)
+#
+#         # 终止信号逻辑
+#         done = 1.0 if fatigue_score > 0.85 and alpha > 0.7 else 0.0
+#
+#         next_state = (state + np.random.normal(0, 0.02, 3)).astype(np.float32)
+#         buffer.append((state, action_idx, reward, next_state, done))
+#
+#     return buffer
+#
+#
+# # ==========================================
+# # 阶段 2：Q 网络 (依然是 3 维输入)
+# # ==========================================
+# class VOmniFineQNetwork(nn.Module):
+#     def __init__(self, action_dim):
+#         super(VOmniFineQNetwork, self).__init__()
+#         self.fc = nn.Sequential(
+#             nn.Linear(3, 128),
+#             nn.ReLU(),
+#             nn.Linear(128, 64),
+#             nn.ReLU(),
+#             nn.Linear(64, action_dim)
+#         )
+#
+#     def forward(self, x):
+#         return self.fc(x)
+#
+#
+# def train_offline_rl(buffer, epochs=500):  # 建议先从 500 轮开始观察
+#     print("🧠 [阶段 2] 开始训练 (训练端已注入互动惩罚)...")
+#     action_dim = len(ACTION_SPACE)
+#     model = VOmniFineQNetwork(action_dim)
+#
+#     # 调低学习率，并改用对异常值更鲁棒的 Huber Loss (SmoothL1)
+#     optimizer = optim.Adam(model.parameters(), lr=0.0005)
+#     loss_fn = nn.SmoothL1Loss()
+#
+#     states = torch.tensor(np.array([x[0] for x in buffer]))
+#     actions = torch.tensor([x[1] for x in buffer], dtype=torch.int64).unsqueeze(1)
+#     rewards = torch.tensor([x[2] for x in buffer], dtype=torch.float32)
+#     next_states = torch.tensor(np.array([x[3] for x in buffer]))
+#     dones = torch.tensor([x[4] for x in buffer], dtype=torch.float32)
+#
+#     for epoch in range(epochs):
+#         # 当前 Q 值
+#         q_values = model(states).gather(1, actions).squeeze()
+#
+#         # 目标 Q 值
+#         with torch.no_grad():
+#             max_next_q = model(next_states).max(1)[0]
+#             target_q = rewards + 0.95 * max_next_q * (1 - dones)
+#
+#         loss = loss_fn(q_values, target_q)
+#         optimizer.zero_grad()
+#         loss.backward()
+#
+#         # 增加梯度裁剪，彻底解决 Loss 爆炸问题
+#         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+#
+#         optimizer.step()
+#
+#         if (epoch + 1) % 100 == 0:
+#             print(f"   Epoch {epoch + 1}/{epochs} | Loss: {loss.item():.6f}")
+#
+#     return model
+#
+#
+# # ==========================================
+# # 阶段 3：测试 (输入保持不变)
+# # ==========================================
+# def test_fine_inference(model):
+#     print("\n🎯 [阶段 3] 测试：模型是否学会了“为了互动率而克制”...")
+#     test_cases = [
+#         {"name": "极度上头", "state": [0.1, 0.4, 0.6]},  # 应该推荐高 Alpha
+#         {"name": "中度疲劳", "state": [0.6, 0.7, 0.1]},  # 应该收敛到中 Alpha
+#         {"name": "极度厌倦", "state": [0.9, 0.9, -0.3]}  # 应该推荐极低 Alpha (Alpha=0.0或0.1)
+#     ]
+#
+#     model.eval()
+#     with torch.no_grad():
+#         for case in test_cases:
+#             state_tensor = torch.tensor(case["state"], dtype=torch.float32).unsqueeze(0)
+#             q_values = model(state_tensor).numpy()[0]
+#             best_action_idx = np.argmax(q_values)
+#             recommended_alpha = ACTION_SPACE[best_action_idx]
+#
+#             print(f"👤 {case['name']} -> 决策 Alpha: {recommended_alpha:.1f}")
+#             # 如果 Alpha 在极度厌倦下变小了，说明惩罚生效了
+#
+#
+# if __name__ == "__main__":
+#     data = generate_mock_offline_data(25000)
+#     model = train_offline_rl(data, epochs=20000)  # 1000轮通常就能看到非常稳定的结果
+#     test_fine_inference(model)
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import random
-
-# 定义 11 个精细档位
-ACTION_SPACE = np.linspace(0, 1, 11)
 
 
-# ==========================================
-# 阶段 1：模拟包含“互动率奖惩”的训练数据
-# ==========================================
-def generate_mock_offline_data(num_samples=25000):
-    print(f"🚀 [阶段 1] 正在模拟日志：调整奖惩平衡，激发模型积极性...")
-    buffer = []
-    for _ in range(num_samples):
-        saturation = random.uniform(0, 1)
-        similarity = random.uniform(0.5, 1)
-        vtr_diff = random.uniform(-0.5, 0.5)
-        state = np.array([saturation, similarity, vtr_diff], dtype=np.float32)
+class VOmni_DLRM_v2(nn.Module):
+    def __init__(self, vocab_dims, dense_dim, video_dim, embed_dim):
+        """
+        vocab_dims: 字典，包含各离散特征的词表大小
+        dense_dim: 连续特征维度 (年龄 + 视频热度)
+        video_dim: 原始视频向量维度 (如 512)
+        embed_dim: 统一映射后的 Embedding 维度 (如 16)
+        """
+        super(VOmni_DLRM_v2, self).__init__()
 
-        action_idx = random.randint(0, len(ACTION_SPACE) - 1)
-        alpha = ACTION_SPACE[action_idx]
+        # 1. 离散特征 (7个)
+        self.embed_user = nn.Embedding(vocab_dims['user'], embed_dim)
+        self.embed_item = nn.Embedding(vocab_dims['item'], embed_dim)
+        self.embed_cluster = nn.Embedding(vocab_dims['cluster'], embed_dim)
+        self.embed_sex = nn.Embedding(vocab_dims['sex'], embed_dim)
+        self.embed_country = nn.Embedding(vocab_dims['country'], embed_dim)
+        self.embed_province = nn.Embedding(vocab_dims['province'], embed_dim)
+        self.embed_city = nn.Embedding(vocab_dims['city'], embed_dim)
 
-        # 计算疲劳得分
-        fatigue_score = (saturation + similarity) * 0.5 - vtr_diff
-
-        # 1. 基础奖励：调大权重，让模型更看重完播表现
-        base_reward = vtr_diff * 10.0
-
-        # 2. 互动因子 (真正的核心调整)
-        interact_factor = 0
-
-        if fatigue_score < 0.4:
-            # 【用户上头区】：鼓励高 Alpha
-            # 如果此时推用户喜欢的 (Alpha大)，额外加分
-            if alpha > 0.7:
-                interact_factor = 8.0 * alpha
-            else:
-                interact_factor = -2.0  # 如果用户上头你却推多样化，稍微给点小惩罚（浪费机会）
-
-        elif fatigue_score > 0.7:
-            # 【用户疲劳区】：严惩高 Alpha
-            if alpha > 0.5:
-                # 触发互动率暴跌，给一个固定的猛烈打击
-                interact_factor = -15.0
-            else:
-                # 给了多样性，奖励“挽救行为”
-                interact_factor = 5.0
-
-        else:
-            # 【平稳期】
-            interact_factor = 2.0 if 0.3 <= alpha <= 0.6 else -1.0
-
-        reward = base_reward + interact_factor
-
-        # 3. 限制范围，保护梯度稳定
-        reward = np.clip(reward, -20.0, 20.0)
-
-        # 终止信号逻辑
-        done = 1.0 if fatigue_score > 0.85 and alpha > 0.7 else 0.0
-
-        next_state = (state + np.random.normal(0, 0.02, 3)).astype(np.float32)
-        buffer.append((state, action_idx, reward, next_state, done))
-
-    return buffer
-
-
-# ==========================================
-# 阶段 2：Q 网络 (依然是 3 维输入)
-# ==========================================
-class VOmniFineQNetwork(nn.Module):
-    def __init__(self, action_dim):
-        super(VOmniFineQNetwork, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(3, 128),
+        # 2. 连续特征 (Bottom MLP)
+        self.bottom_mlp = nn.Sequential(
+            nn.Linear(dense_dim, 32),
             nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, action_dim)
+            nn.Linear(32, embed_dim),
+            nn.ReLU()
         )
 
-    def forward(self, x):
-        return self.fc(x)
+        # 3. 视频语义投影
+        self.video_proj = nn.Linear(video_dim, embed_dim)
+
+        # 4. 交互层参数计算
+        # 总向量数 = 7(离散) + 1(连续) + 1(投影) = 9
+        self.num_vectors = 9
+        self.num_interactions = (self.num_vectors * (self.num_vectors - 1)) // 2  # 36
+
+        # 5. Top MLP
+        # 输入 = 交叉项(36) + 连续特征输出(embed_dim)
+        self.top_mlp = nn.Sequential(
+            nn.Linear(self.num_interactions + embed_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, sparse_inputs, dense_inputs, video_vector):
+        """
+        sparse_inputs: 包含 7 个 id 的字典或 Tensor
+        dense_inputs: [Age, Popularity]
+        video_vector: [512]
+        """
+        # 提取所有离散向量
+        v_user = self.embed_user(sparse_inputs['user'])
+        v_item = self.embed_item(sparse_inputs['item'])
+        v_cluster = self.embed_cluster(sparse_inputs['cluster'])
+        v_sex = self.embed_sex(sparse_inputs['sex'])
+        v_country = self.embed_country(sparse_inputs['country'])
+        v_province = self.embed_province(sparse_inputs['province'])
+        v_city = self.embed_city(sparse_inputs['city'])
+
+        # 处理连续向量
+        v_dense = self.bottom_mlp(dense_inputs)
+
+        # 投影视频向量
+        v_video = self.video_proj(video_vector)
+
+        # --- 堆叠矩阵 [Batch, 9, 16] ---
+        combined = torch.stack([
+            v_user, v_item, v_cluster, v_sex,
+            v_country, v_province, v_city,
+            v_dense, v_video
+        ], dim=1)
+
+        # --- 批量矩阵乘法 (点积交融) ---
+        # [Batch, 9, 16] * [Batch, 16, 9] = [Batch, 9, 9]
+        dot_products = torch.bmm(combined, combined.transpose(1, 2))
+
+        # 提取上三角 (36个交叉特征)
+        indices = torch.triu_indices(self.num_vectors, self.num_vectors, offset=1)
+        interactions = dot_products[:, indices[0], indices[1]]
+
+        # 拼接原始连续特征输出并预测
+        x = torch.cat([interactions, v_dense], dim=1)
+        return self.top_mlp(x)
 
 
-def train_offline_rl(buffer, epochs=500):  # 建议先从 500 轮开始观察
-    print("🧠 [阶段 2] 开始训练 (训练端已注入互动惩罚)...")
-    action_dim = len(ACTION_SPACE)
-    model = VOmniFineQNetwork(action_dim)
+# --- 测试函数 ---
+def run_v2_test():
+    # 模拟各字典大小 (根据你的 ES/MySQL 规模设定)
+    vocab_dims = {
+        'user': 1000, 'item': 5000, 'cluster': 8,
+        'sex': 3, 'country': 10, 'province': 35, 'city': 300
+    }
 
-    # 调低学习率，并改用对异常值更鲁棒的 Huber Loss (SmoothL1)
-    optimizer = optim.Adam(model.parameters(), lr=0.0005)
-    loss_fn = nn.SmoothL1Loss()
+    samples = 128
+    model = VOmni_DLRM_v2(vocab_dims, dense_dim=2, video_dim=512, embed_dim=16)
 
-    states = torch.tensor(np.array([x[0] for x in buffer]))
-    actions = torch.tensor([x[1] for x in buffer], dtype=torch.int64).unsqueeze(1)
-    rewards = torch.tensor([x[2] for x in buffer], dtype=torch.float32)
-    next_states = torch.tensor(np.array([x[3] for x in buffer]))
-    dones = torch.tensor([x[4] for x in buffer], dtype=torch.float32)
+    # 构造模拟输入
+    sparse_in = {k: torch.randint(0, v, (samples,)) for k, v in vocab_dims.items()}
+    dense_in = torch.rand(samples, 2)
+    video_in = torch.randn(samples, 512)
+    labels = torch.randint(0, 2, (samples, 1)).float()
 
-    for epoch in range(epochs):
-        # 当前 Q 值
-        q_values = model(states).gather(1, actions).squeeze()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    criterion = nn.BCELoss()
 
-        # 目标 Q 值
-        with torch.no_grad():
-            max_next_q = model(next_states).max(1)[0]
-            target_q = rewards + 0.95 * max_next_q * (1 - dones)
+    print(f"模型初始化成功！参与交融的向量数: {model.num_vectors}，交叉项数: {model.num_interactions}")
 
-        loss = loss_fn(q_values, target_q)
-        optimizer.zero_grad()
-        loss.backward()
+    # 单步训练测试
+    model.train()
+    optimizer.zero_grad()
+    output = model(sparse_in, dense_in, video_in)
+    loss = criterion(output, labels)
+    loss.backward()
+    optimizer.step()
 
-        # 增加梯度裁剪，彻底解决 Loss 爆炸问题
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
-        optimizer.step()
-
-        if (epoch + 1) % 100 == 0:
-            print(f"   Epoch {epoch + 1}/{epochs} | Loss: {loss.item():.6f}")
-
-    return model
-
-
-# ==========================================
-# 阶段 3：测试 (输入保持不变)
-# ==========================================
-def test_fine_inference(model):
-    print("\n🎯 [阶段 3] 测试：模型是否学会了“为了互动率而克制”...")
-    test_cases = [
-        {"name": "极度上头", "state": [0.1, 0.4, 0.6]},  # 应该推荐高 Alpha
-        {"name": "中度疲劳", "state": [0.6, 0.7, 0.1]},  # 应该收敛到中 Alpha
-        {"name": "极度厌倦", "state": [0.9, 0.9, -0.3]}  # 应该推荐极低 Alpha (Alpha=0.0或0.1)
-    ]
-
-    model.eval()
-    with torch.no_grad():
-        for case in test_cases:
-            state_tensor = torch.tensor(case["state"], dtype=torch.float32).unsqueeze(0)
-            q_values = model(state_tensor).numpy()[0]
-            best_action_idx = np.argmax(q_values)
-            recommended_alpha = ACTION_SPACE[best_action_idx]
-
-            print(f"👤 {case['name']} -> 决策 Alpha: {recommended_alpha:.1f}")
-            # 如果 Alpha 在极度厌倦下变小了，说明惩罚生效了
+    print(f"单步测试 Loss: {loss.item():.4f}")
+    print("九个特征维度的深度交融矩阵运行正常。")
 
 
 if __name__ == "__main__":
-    data = generate_mock_offline_data(25000)
-    model = train_offline_rl(data, epochs=20000)  # 1000轮通常就能看到非常稳定的结果
-    test_fine_inference(model)
+    run_v2_test()
+
 
 # import torch
 # import torch.nn as nn

@@ -1,9 +1,7 @@
 package org.example.vomniauth.mapper;
 
-import org.apache.ibatis.annotations.Insert;
-import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.*;
+import org.example.vomniauth.dto.BasicInfoDto;
 import org.example.vomniauth.po.UserPo;
 
 import java.util.List;
@@ -34,4 +32,9 @@ public interface UserMapper {
 
     @Select("SELECT id from u_user")
     List<Long> findId();
+
+    @Update(" UPDATE u_user " +
+            " SET sex = #{sex}, birth_year = #{birthYear}, country = #{country},province = #{province},city = #{city} " +
+            " WHERE id = #{userId}")
+    int updateUserBasicInfo(BasicInfoDto basicInfoDto);
 }

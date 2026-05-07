@@ -70,9 +70,11 @@ public class SearchServiceImpl implements SearchService {
         if(content.length() > 50) content = content.substring(0, 50);
         if (userId != null) {
             SearchHistoryDTO dto = new SearchHistoryDTO(userId, content);
+            // 写入用户历史
             searchHistoryDTOKafkaTemplate.send(USER_HISTORY_TOPIC, dto);
         }
 
+        //写入热词历史
         kafkaTemplate.send(HOT_WORD_TOPIC,content);
 
         float[] vector = vectorService.getTextVector(content);
@@ -101,6 +103,7 @@ public class SearchServiceImpl implements SearchService {
         userSearchVectorDto.setUpdateTime(new Date());
         userSearchVectorDto.setMediaId(searchMediaVos.getFirst().getMediaId());
 
+        // 写入用户画像构建历史
         userSearchVectorKafkaTemplate.send(USER_SEARCH_CONTENT_TOPIC, userSearchVectorDto);
         return searchMediaVos;
     }

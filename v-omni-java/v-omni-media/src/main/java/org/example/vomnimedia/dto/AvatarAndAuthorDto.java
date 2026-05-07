@@ -11,7 +11,7 @@ public class AvatarAndAuthorDto implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
-    private String avatar;
+    private String avatarPath;
     private String author;
 
 }

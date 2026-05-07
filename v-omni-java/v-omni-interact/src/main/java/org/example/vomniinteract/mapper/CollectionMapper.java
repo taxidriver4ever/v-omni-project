@@ -3,9 +3,11 @@ package org.example.vomniinteract.mapper;
 import org.apache.ibatis.annotations.*;
 import org.example.vomniinteract.po.CollectionPo;
 
+import java.util.List;
+
 @Mapper
 public interface CollectionMapper {
-    @Insert("INSERT INTO u_collection(id, user_id, media_id, create_time) " +
+    @Insert("INSERT IGNORE INTO u_collection(id, user_id, media_id, create_time) " +
             "VALUES(#{id}, #{userId}, #{mediaId}, #{createTime}) ")
     int insertCollection(CollectionPo collectionPo);
 
@@ -16,5 +18,10 @@ public interface CollectionMapper {
             "FROM u_collection " +
             "WHERE user_id = #{userId} AND media_id = #{mediaId}")
     Long selectCollectionIdByUserIdAndMediaId(@Param("userId")Long userId, @Param("mediaId")Long mediaId);
+
+    @Select("SELECT user_id "+
+            "FROM u_collection " +
+            "WHERE media_id = #{mediaId}")
+    List<Long> selectUserIdByMediaId(@Param("mediaId")Long mediaId);
 
 }

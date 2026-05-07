@@ -38,15 +38,15 @@ PUT /user_media_interaction_index
 {
   "mappings": {
     "properties": {
+      "user_id": { "type": "long" },
       "media_id": { "type": "long" },
-      "cover_path": { "type": "keyword", "index": false },
-      "like_count": { "type": "integer" },
-      "like_user_ids": { "type": "keyword" },
-      "collect_user_ids": { "type": "keyword" },
+      "behavior": { "type": "keyword" }, // "like", "collect"
       "create_time": { 
         "type": "date",
-        "format": "yyyy-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis"
-      }
+        "format": "yyyy-MM-dd HH:mm:ss.SSS"
+      },
+      "cover_path": { "type": "keyword", "index": false },
+      "like_count": { "type": "integer" } 
     }
   }
 }
@@ -82,6 +82,28 @@ PUT /user_profile_index
   "mappings": {
     "properties": {
       "user_id": { "type": "keyword" },
+      
+      // --- 新增画像特征 ---
+      "sex": { 
+        "type": "byte"  // 0:未知, 1:男, 2:女，byte 节省存储空间
+      },
+      "age": { 
+        "type": "short" // 支持 range 查询，例如查询 18-25 岁的用户画像
+      },
+      "birth_year": {
+        "type": "short"
+      },
+      "country": { 
+        "type": "keyword" // 推荐、过滤主要靠 keyword
+      },
+      "province": { 
+        "type": "keyword" 
+      },
+      "city": { 
+        "type": "keyword" 
+      },
+      
+      // --- 原有向量数据 ---
       "cluster_vectors": { 
         "type": "binary",
         "doc_values": false 

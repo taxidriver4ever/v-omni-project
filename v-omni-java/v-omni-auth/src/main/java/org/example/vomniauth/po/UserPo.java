@@ -34,6 +34,11 @@ public class UserPo implements Serializable {
     private String email;
     private String state;
     private String avatarPath;
+    private Integer sex;
+    private Integer birthYear;
+    private String country;
+    private String province;
+    private String city;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
     private Date createTime;
@@ -47,5 +52,6 @@ public class UserPo implements Serializable {
         this.email = email;
         this.state = authState.toString();
     }
+
 }
 

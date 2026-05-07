@@ -1,6 +1,7 @@
 package org.example.vomniinteract.service;
 
 import org.example.vomniinteract.po.DocumentVectorMediaPo;
+import org.example.vomniinteract.vo.RecommendMediaVo;
 import org.redisson.api.RBloomFilter;
 
 import java.io.IOException;
@@ -15,4 +16,6 @@ public interface DocumentVectorMediaService {
      */
     void bulkUpdateCounts(Map<String, Map<String, Integer>> bulkUpdates);
     DocumentVectorMediaPo getById(String id);
+    RecommendMediaVo getRecommendVoById(String id);
+
 }

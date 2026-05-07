@@ -26,17 +26,10 @@ public interface CommentMapper {
     @Update("UPDATE u_comment SET deleted = 1 WHERE id = #{id}")
     int deleteCommentById(@Param("id") Long id);
 
-    @Select("""
-            <script>
-                SELECT id, username, avatar_path AS avatarPath
-                FROM u_user
-                WHERE id IN 
-                <foreach item='id' collection='userIds' open='(' separator=',' close=')'>
-                    #{id}
-                </foreach>
-            </script> 
-        """)
-    List<UserPo> selectUserInfosByIds(@Param("userIds") List<Long> userIds);
+    @Select("SELECT id "+
+            "FROM u_comment " +
+            "WHERE user_id = #{userId} and deleted = 0 ")
+    List<Long> selectCommentIdByUserId(@Param("userId")Long mediaId);
 
 
 }

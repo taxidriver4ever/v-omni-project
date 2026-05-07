@@ -3,6 +3,7 @@ package org.example.vomniauth.consumer;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomniauth.domain.statemachine.AuthState;
+import org.example.vomniauth.dto.BasicInfoDto;
 import org.example.vomniauth.dto.IdAndEmailDto;
 import org.example.vomniauth.mapper.UserMapper;
 import org.example.vomniauth.po.UserPo;
@@ -174,5 +175,19 @@ public class AuthCodeConsumer {
             );
             emailBloomFilter.add(email);
         }
+    }
+
+    @Transactional
+    @KafkaListener(topics = "auth-basic-info",groupId = "v-omni-auth-group")
+    public void authBasicInfoTopicConsume(@NotNull BasicInfoDto basicInfoDto) {
+        Long userId = basicInfoDto.getUserId();
+        Integer sex = basicInfoDto.getSex();
+        String country = basicInfoDto.getCountry();
+        String province = basicInfoDto.getProvince();
+        String city = basicInfoDto.getCity();
+        Integer birthYear = basicInfoDto.getBirthYear();
+
+        userMapper.updateUserBasicInfo(basicInfoDto);
+        documentUserProfileService.updateUserDemographics(String.valueOf(userId),sex,birthYear,country,province,city);
     }
 }

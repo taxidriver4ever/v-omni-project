@@ -49,9 +49,33 @@ public class RedisConfig {
      * Lua 脚本注入区域
      * --------------------------------------------------------- */
     @Bean
-    public DefaultRedisScript<Long> doOrCancelScript() {
+    public DefaultRedisScript<Long> doLikeCollectionScript() {
         DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
-        redisScript.setLocation(new ClassPathResource("lua/do_or_cancel_like_or_collection.lua"));
+        redisScript.setLocation(new ClassPathResource("lua/do_like_collection.lua"));
+        redisScript.setResultType(Long.class);
+        return redisScript;
+    }
+
+    @Bean
+    public DefaultRedisScript<Long> cancelLikeCollectionScript() {
+        DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
+        redisScript.setLocation(new ClassPathResource("lua/cancel_like_collection.lua"));
+        redisScript.setResultType(Long.class);
+        return redisScript;
+    }
+
+    @Bean
+    public DefaultRedisScript<Long> doCommentLikeScript() {
+        DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
+        redisScript.setLocation(new ClassPathResource("lua/do_comment_like.lua"));
+        redisScript.setResultType(Long.class);
+        return redisScript;
+    }
+
+    @Bean
+    public DefaultRedisScript<Long> cancelCommentLikeScript() {
+        DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
+        redisScript.setLocation(new ClassPathResource("lua/cancel_comment_like.lua"));
         redisScript.setResultType(Long.class);
         return redisScript;
     }

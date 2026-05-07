@@ -30,6 +30,21 @@ public class DocumentUserProfilePo {
     @JsonProperty("interest_vector")
     private float[] interestVector;
 
+    @JsonProperty("sex")
+    private int sex;
+
+    @JsonProperty("birth_year")
+    private int birthYear;
+
+    @JsonProperty("country")
+    private String country;
+
+    @JsonProperty("province")
+    private String province;
+
+    @JsonProperty("city")
+    private String city;
+
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss.SSS", timezone = "GMT+8")
     @JsonProperty("update_time")
     private Date updateTime;

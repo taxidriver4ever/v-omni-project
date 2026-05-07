@@ -104,7 +104,6 @@ public class InteractController {
         return MyResult.success(collectionUserList);
     }
 
-    // 建议改回 Post，或者将参数拆解为 RequestParam
     @PostMapping("/root/comment")
     public MyResult<List<CommentVo>> rootComment(@RequestBody MediaCommentDto mediaCommentDto) {
         String rootId = mediaCommentDto.getRootId();

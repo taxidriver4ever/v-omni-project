@@ -91,12 +91,12 @@ public class SearchConsumer {
         try {
             String cleanInput = message.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9\\s]", " ").trim().replaceAll("\\s+", " ");
             if (cleanInput.length() >= 2 && cleanInput.length() <= 20 && !stopWordService.isStopWord(cleanInput)) {
-                executeUpsert(cleanInput, "6");
+                hotWordRedisService.incrementHotWord(cleanInput, 6.0);
                 try {
                     List<String> tokens = documentVectorMediaService.analyzeText(cleanInput);
                     for (String token : tokens) {
                         if (!token.equalsIgnoreCase(cleanInput) && token.length() >= 2 && !stopWordService.isStopWord(token)) {
-                            executeUpsert(token, "4");
+                            hotWordRedisService.incrementHotWord(token, 4.0);
                         }
                     }
                 } catch (Exception e) {
@@ -114,13 +114,6 @@ public class SearchConsumer {
         try {
             Long userId = dto.getUserId();
             String keyword = dto.getKeyword();
-            String redisKey = "search:keyword:user_id:" + userId;
-            stringRedisTemplate.opsForZSet().add(redisKey, keyword, System.currentTimeMillis());
-            Long size = stringRedisTemplate.opsForZSet().zCard(redisKey);
-            if (size != null && size > 24) {
-                stringRedisTemplate.opsForZSet().removeRange(redisKey, 0, size - 25);
-            }
-            stringRedisTemplate.expire(redisKey, 30, TimeUnit.DAYS);
             Date now = new Date();
             UserSearchHistoryPo po = new UserSearchHistoryPo(snowflakeIdWorker.nextId(), userId, keyword, now, now);
             userSearchHistoryMapper.addUserSearchHistoryIfAbsentUpdateTime(po);
@@ -191,11 +184,6 @@ public class SearchConsumer {
 
             // 获取当前 Query 向量
             float[] currentQuery = documentUserProfileService.getUserQueryVector(userId);
-            if (isAllZerosStream(currentQuery)) {
-                // 兜底：用 Global 池里最新的一条行为作为 Query
-                byte[] latestK = globalKList.getLast();
-                currentQuery = VectorUtil.decodeFloatArray(latestK);
-            }
 
             // 获取长期兴趣质心
             List<InterestCentroid> longTermCentroids = documentUserProfileService.getInterestCentroids(userId);
@@ -295,17 +283,7 @@ public class SearchConsumer {
         documentUserBehaviorHistoryService.saveBehavior(po);
     }
 
-    private void executeUpsert(String word, String score) {
-        hotWordRedisService.incrementHotWord(word, Double.parseDouble(score));
-    }
-
     private void expireKeys(String... keys) {
         for (String k : keys) byteRedisTemplate.expire(k, 7, TimeUnit.DAYS);
-    }
-
-    private boolean isAllZerosStream(float[] array) {
-        return IntStream.range(0, array.length)
-                .mapToDouble(i -> array[i])
-                .allMatch(f -> f == 0.0f);
     }
 }

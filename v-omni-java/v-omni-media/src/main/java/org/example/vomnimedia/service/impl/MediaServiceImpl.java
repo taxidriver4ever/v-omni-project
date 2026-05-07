@@ -42,8 +42,8 @@ public class MediaServiceImpl implements MediaService {
     private KafkaTemplate<String,UserIdAndMediaIdDto> userIdAndMediaIdDtoKafkaTemplate;
 
     @Override
-    public PreSignResponseVo generatePreSignature(String userId) {
-//        Long userId = SecurityUtils.getCurrentUserId();
+    public PreSignResponseVo generatePreSignature() {
+        Long userId = SecurityUtils.getCurrentUserId();
 
         Long id = identityService.getOrCreateUserIdByEmail();
 

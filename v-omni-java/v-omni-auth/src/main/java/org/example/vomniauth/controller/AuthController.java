@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import org.example.vomniauth.common.MyResult;
 import org.example.vomniauth.domain.statemachine.AuthState;
 import org.example.vomniauth.dto.AuthCodeRequestDTO;
+import org.example.vomniauth.dto.BasicInfoDto;
 import org.example.vomniauth.service.AuthService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.*;
@@ -121,6 +122,12 @@ public class AuthController {
                 return MyResult.error(404,"请求用户尚无注册");
             }
         }
+    }
+
+    @PostMapping("/basic/info")
+    public MyResult<String> setBasicInfo(@RequestBody BasicInfoDto basicInfoDto) {
+        authService.setBasicInfo(basicInfoDto);
+        return MyResult.success();
     }
 
     @DeleteMapping("/logout")

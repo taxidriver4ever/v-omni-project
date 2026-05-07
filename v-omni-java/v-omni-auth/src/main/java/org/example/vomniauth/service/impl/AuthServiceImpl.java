@@ -11,10 +11,12 @@ import org.example.vomniauth.domain.statemachine.AuthEventContext;
 import org.example.vomniauth.domain.statemachine.AuthState;
 import org.example.vomniauth.domain.statemachine.AuthTransitionService;
 import org.example.vomniauth.dto.AuthCodeRequestDTO;
+import org.example.vomniauth.dto.BasicInfoDto;
 import org.example.vomniauth.mapper.UserMapper;
 import org.example.vomniauth.service.AuthService;
 import org.example.vomniauth.service.IdentityService;
 import org.example.vomniauth.util.JwtUtils;
+import org.example.vomniauth.util.SecurityUtils;
 import org.example.vomniauth.util.SnowflakeIdWorker;
 import org.jetbrains.annotations.NotNull;
 import org.redisson.api.RBloomFilter;
@@ -52,6 +54,9 @@ public class AuthServiceImpl implements AuthService {
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private KafkaTemplate<String, BasicInfoDto> basicInfoKafkaTemplate;
 
     @Override
     public AuthState processAuthCode(@NotNull AuthCodeRequestDTO authCodeRequestDTO) {
@@ -149,6 +154,13 @@ public class AuthServiceImpl implements AuthService {
                 .sameSite("Lax")
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, deleteCookie.toString());
+    }
+
+    @Override
+    public void setBasicInfo(BasicInfoDto basicInfoDto) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        basicInfoDto.setUserId(userId);
+        basicInfoKafkaTemplate.send("auth-basic-info", basicInfoDto);
     }
 
 

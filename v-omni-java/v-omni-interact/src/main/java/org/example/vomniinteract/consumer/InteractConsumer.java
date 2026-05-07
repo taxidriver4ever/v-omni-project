@@ -1,5 +1,6 @@
 package org.example.vomniinteract.consumer;
 
+import com.google.common.primitives.Floats;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.vomniinteract.dto.*;
@@ -9,16 +10,24 @@ import org.example.vomniinteract.mapper.CommentMapper;
 import org.example.vomniinteract.mapper.LikeMapper;
 import org.example.vomniinteract.po.*;
 import org.example.vomniinteract.service.*;
-import org.example.vomniinteract.service.impl.DocumentUserProfileServiceImpl;
+import org.example.vomniinteract.grpc.*; // 确保导入了 gRPC 生成的类
 import org.example.vomniinteract.util.SnowflakeIdWorker;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+/**
+ * 互动服务消费者
+ * 职能：处理点赞、收藏、评论逻辑，并维护用户行为滑动窗口触发 gRPC 画像进化
+ */
 @Component
 @Slf4j
 public class InteractConsumer {
@@ -42,12 +51,24 @@ public class InteractConsumer {
     @Resource
     private DocumentUserProfileService documentUserProfileService;
 
-    // ================= 新增注入 =================
+    // ================= 核心演化组件注入 =================
     @Resource
-    private VectorService vectorService;
+    private StringRedisTemplate stringRedisTemplate;
     @Resource
-    private RedisTemplate<String, Object> redisTemplate; // 用于存取用户的兴趣向量
-    // ============================================
+    private RedisTemplate<String, byte[]> byteRedisTemplate;
+    @Resource
+    private UserModelServiceGrpc.UserModelServiceBlockingStub userModelStub;
+
+    // Redis Key 定义 (与 SearchConsumer 保持一致)
+    private final static String K_GLOBAL_PREFIX = "behavior:global:k:user_id:";
+    private final static String V_GLOBAL_PREFIX = "behavior:global:v:user_id:";
+    private final static String COUNTER_PREFIX = "behavior:counter:user_id:";
+
+    // 演化参数
+    private final static int GLOBAL_CAPACITY = 24;
+    private final static int TRIGGER_STEP = 4;
+    private final static int VECTOR_DIM = 512;
+    private final static int BIZ_DIM = 4;
 
     /**
      * 1. 视频点赞消费者
@@ -55,23 +76,57 @@ public class InteractConsumer {
     @Transactional
     @KafkaListener(topics = "database-like-topic", groupId = "v-omni-interaction-group")
     public void databaseLikeTopicConsume(List<DoLikeDto> messages) {
-        List<InteractionTaskDto> esTasks = new ArrayList<>();
-        for (DoLikeDto m : messages) {
-            Long uId = Long.parseLong(m.getUserId());
-            Long mId = Long.parseLong(m.getMediaId());
-            boolean isAdd = !"0".equals(m.getAction());
+        if (messages == null || messages.isEmpty()) return;
 
-            if (isAdd) {
-                likeMapper.insertLike(LikePo.builder().id(snowflakeIdWorker.nextId()).userId(uId).mediaId(mId).createTime(m.getCreateTime()).build());
-                // 【新增】点赞触发兴趣向量演化
-                triggerInterestEvolution(uId, mId, "like");
-            } else {
-                likeMapper.deleteLike(uId, mId);
-                // 取消点赞也可以传入 "cancel_like" 让模型弱化该特征，或者直接忽略
-            }
-            esTasks.add(InteractionTaskDto.builder().userId(uId).mediaId(mId).actionType("LIKE").add(isAdd).build());
+        // 1. 行为折叠（你原有的逻辑）
+        Map<String, DoLikeDto> foldedMap = new LinkedHashMap<>();
+        for (DoLikeDto msg : messages) {
+            String key = msg.getUserId() + ":" + msg.getMediaId();
+            foldedMap.put(key, msg);
         }
-        documentMediaInteractionService.bulkProcessInteractions(esTasks);
+
+        // 2. 准备 ES 批量更新的数据结构：mediaId -> (fieldName -> changeAmount)
+        Map<String, Map<String, Integer>> esUpdateMap = new HashMap<>();
+
+        foldedMap.forEach((key, finalMsg) -> {
+            Long userId = Long.parseLong(finalMsg.getUserId());
+            Long mediaId = Long.parseLong(finalMsg.getMediaId());
+            String mIdStr = finalMsg.getMediaId();
+
+            if ("like".equals(finalMsg.getAction())) {
+                // --- 数据库操作 ---
+                LikePo likePo = LikePo.builder()
+                        .id(snowflakeIdWorker.nextId())
+                        .userId(userId)
+                        .mediaId(mediaId)
+                        .createTime(finalMsg.getCreateTime())
+                        .build();
+                int rows = likeMapper.insertLike(likePo);
+
+                // --- ES 计数累加逻辑 ---
+                // 只有当数据库插入成功（即不是重复点赞）时，才增加 ES 计数
+                if (rows > 0) {
+                    esUpdateMap.computeIfAbsent(mIdStr, k -> new HashMap<>())
+                            .merge("like_count", 1, Integer::sum);
+                }
+
+            } else {
+                // --- 数据库操作 ---
+                int rows = likeMapper.deleteLike(userId, mediaId);
+
+                // --- ES 计数扣减逻辑 ---
+                // 只有当数据库实际删除了记录（即之前确实点过赞）时，才减少 ES 计数
+                if (rows > 0) {
+                    esUpdateMap.computeIfAbsent(mIdStr, k -> new HashMap<>())
+                            .merge("like_count", -1, Integer::sum);
+                }
+            }
+        });
+
+        // 3. 调用你的 ES 批量更新函数
+        if (!esUpdateMap.isEmpty()) {
+            documentVectorMediaService.bulkUpdateCounts(esUpdateMap);
+        }
     }
 
     /**
@@ -80,114 +135,118 @@ public class InteractConsumer {
     @Transactional
     @KafkaListener(topics = "database-collection-topic", groupId = "v-omni-interaction-group")
     public void databaseCollectionTopicConsume(List<DoCollectionDto> messages) {
-        List<InteractionTaskDto> esTasks = new ArrayList<>();
-        for (DoCollectionDto m : messages) {
-            Long uId = Long.parseLong(m.getUserId());
-            Long mId = Long.parseLong(m.getMediaId());
-            boolean isAdd = !"0".equals(m.getAction());
+        if (messages == null || messages.isEmpty()) return;
 
-            if (isAdd) {
-                collectionMapper.insertCollection(CollectionPo.builder().id(snowflakeIdWorker.nextId()).userId(uId).mediaId(mId).createTime(m.getCreateTime()).build());
-                // 【新增】收藏触发兴趣向量演化 (收藏的权重在模型里更高，演化幅度更大)
-                triggerInterestEvolution(uId, mId, "collect");
-            } else {
-                collectionMapper.deleteCollection(uId, mId);
-            }
-            esTasks.add(InteractionTaskDto.builder().userId(uId).mediaId(mId).actionType("COLLECT").add(isAdd).build());
+        // 1. 行为折叠（你原有的逻辑）
+        Map<String, DoCollectionDto> foldedMap = new LinkedHashMap<>();
+        for (DoCollectionDto msg : messages) {
+            String key = msg.getUserId() + ":" + msg.getMediaId();
+            foldedMap.put(key, msg);
         }
-        documentMediaInteractionService.bulkProcessInteractions(esTasks);
+
+        // 2. 准备 ES 批量更新的数据结构：mediaId -> (fieldName -> changeAmount)
+        Map<String, Map<String, Integer>> esUpdateMap = new HashMap<>();
+
+        foldedMap.forEach((key, finalMsg) -> {
+            Long userId = Long.parseLong(finalMsg.getUserId());
+            Long mediaId = Long.parseLong(finalMsg.getMediaId());
+            String mIdStr = finalMsg.getMediaId();
+
+            if ("collection".equals(finalMsg.getAction())) {
+                // --- 数据库操作 ---
+                CollectionPo collectionPo = CollectionPo.builder()
+                        .id(snowflakeIdWorker.nextId())
+                        .userId(userId)
+                        .mediaId(mediaId)
+                        .createTime(finalMsg.getCreateTime())
+                        .build();
+                int rows = collectionMapper.insertCollection(collectionPo);
+
+                // --- ES 计数累加逻辑 ---
+                // 只有当数据库插入成功（即不是重复点赞）时，才增加 ES 计数
+                if (rows > 0) {
+                    esUpdateMap.computeIfAbsent(mIdStr, k -> new HashMap<>())
+                            .merge("collection_count", 1, Integer::sum);
+                }
+
+            } else {
+                // --- 数据库操作 ---
+                int rows = collectionMapper.deleteCollection(userId, mediaId);
+
+                // --- ES 计数扣减逻辑 ---
+                // 只有当数据库实际删除了记录（即之前确实点过赞）时，才减少 ES 计数
+                if (rows > 0) {
+                    esUpdateMap.computeIfAbsent(mIdStr, k -> new HashMap<>())
+                            .merge("collection_count", -1, Integer::sum);
+                }
+            }
+        });
+
+        // 3. 调用你的 ES 批量更新函数
+        if (!esUpdateMap.isEmpty()) {
+            documentVectorMediaService.bulkUpdateCounts(esUpdateMap);
+        }
     }
 
     /**
-     * 3. 评论点赞消费者 (无变化)
+     * 3. 评论点赞消费者
      */
     @Transactional
     @KafkaListener(topics = "database-comment-like-topic", groupId = "v-omni-interaction-group")
     public void databaseCommentLikeTopicConsume(List<DoCommentLikeDto> messages) {
-        log.info("接收到评论点赞消息: {} 条", messages.size());
         Map<Long, Integer> esLikeUpdates = new HashMap<>();
-
         for (DoCommentLikeDto m : messages) {
             Long uId = Long.parseLong(m.getUserId());
             Long cId = Long.parseLong(m.getCommentId());
             boolean isAdd = !"0".equals(m.getAction());
-
             if (isAdd) {
                 commentLikeMapper.insertCommentLike(snowflakeIdWorker.nextId(), cId, uId, m.getCreateTime());
             } else {
                 commentLikeMapper.deleteCommentLike(cId, uId);
             }
-
             esLikeUpdates.merge(cId, isAdd ? 1 : -1, Integer::sum);
         }
-
         if (!esLikeUpdates.isEmpty()) {
             documentCommentService.bulkUpdateCommentLikeCount(esLikeUpdates);
         }
     }
 
     /**
-     * 4. 评论发布/删除消费者 (无变化)
+     * 4. 评论发布/删除消费者
      */
     @Transactional
     @KafkaListener(topics = "database-comment-topic", groupId = "v-omni-interaction-group")
     public void databaseCommentTopicConsume(List<DoCommentDto> messages) {
-        List<Long> userIds = messages.stream()
-                .filter(m -> !"0".equals(m.getAction()))
-                .map(m -> Long.parseLong(m.getUserId())).distinct().toList();
-
-        Map<Long, UserPo> userMap = userIds.isEmpty() ? new HashMap<>() :
-                commentMapper.selectUserInfosByIds(userIds).stream().collect(Collectors.toMap(UserPo::getId, u -> u));
-
-        List<DocumentCommentPo> saveList = new ArrayList<>();
-        List<DoCommentDto> deleteMessages = new ArrayList<>();
-
-        for (DoCommentDto m : messages) {
-            boolean isAdd = !"0".equals(m.getAction());
-            long cId = (m.getId() == null || m.getId().isEmpty()) ? 0L : Long.parseLong(m.getId());
-            long rId = (m.getRootId() == null || m.getRootId().isEmpty()) ? 0L : Long.parseLong(m.getRootId());
-            Long uId = Long.parseLong(m.getUserId());
-            Long mId = Long.parseLong(m.getMediaId());
-
-            if (isAdd) {
-                long finalId = (cId == 0) ? snowflakeIdWorker.nextId() : cId;
-
-                commentMapper.insertComment(CommentPo.builder().id(finalId).mediaId(mId).userId(uId)
-                        .rootId(rId).parentId(Long.parseLong(m.getParentId()))
-                        .content(m.getContent()).createTime(m.getCreateTime()).build());
-
-                UserPo user = userMap.get(uId);
-                saveList.add(DocumentCommentPo.builder().commentId(finalId).mediaId(mId).userId(uId)
-                        .userName(user != null ? user.getUsername() : "用户已注销")
-                        .userAvatar(user != null ? user.getAvatarPath() : "default.png")
-                        .content(m.getContent()).likeCount(0).rootId(rId)
-                        .parentId(Long.parseLong(m.getParentId())).createTime(m.getCreateTime()).build());
-
-                // 可选：你也可以在这里触发 triggerInterestEvolution(uId, mId, "comment");
-            } else {
-                commentMapper.deleteCommentById(cId);
-                if (rId == 0) {
-                    commentMapper.deleteRepliesByRootId(cId);
-                    log.info("根评论删除，已触发 MySQL 级联清理回复. rootId: {}", cId);
-                }
-                deleteMessages.add(m);
+        for(DoCommentDto m : messages) {
+            String action = m.getAction();
+            if ("comment".equals(action)) {
+                CommentPo commentPo = CommentPo.builder()
+                        .id(snowflakeIdWorker.nextId())
+                        .userId(Long.parseLong(m.getUserId()))
+                        .mediaId(Long.parseLong(m.getMediaId()))
+                        .rootId(Long.parseLong(m.getRootId()))
+                        .parentId(Long.parseLong(m.getParentId()))
+                        .createTime(m.getCreateTime())
+                        .content(m.getContent())
+                        .build();
+                commentMapper.insertComment(commentPo);
             }
-        }
-
-        if (!saveList.isEmpty() || !deleteMessages.isEmpty()) {
-            documentCommentService.bulkProcessComments(saveList, deleteMessages);
+            else {
+                if(m.getRootId().equals("0")) {
+                    commentMapper.deleteRepliesByRootId(Long.parseLong(m.getId()));
+                }
+                commentMapper.deleteCommentById(Long.parseLong(m.getId()));
+            }
         }
     }
 
     /**
-     * 5. 互动数据统计消费者 (纯数值聚合)
+     * 5. 互动数据统计消费者
      */
     @KafkaListener(topics = "interaction-count-topic", groupId = "v-omni-interaction-group")
     public void handleInteractionCountConsume(List<InteractionCountDto> messages) {
         if (messages.isEmpty()) return;
-
         Map<String, Map<String, Integer>> bulkUpdates = new HashMap<>();
-
         for (InteractionCountDto m : messages) {
             String field = switch (m.getType()) {
                 case "LIKE" -> "like_count";
@@ -195,7 +254,6 @@ public class InteractConsumer {
                 case "COLLECT" -> "collect_count";
                 default -> null;
             };
-
             if (field != null) {
                 bulkUpdates.computeIfAbsent(m.getMediaId(), k -> new HashMap<>())
                         .merge(field, m.getChange(), Integer::sum);
@@ -205,52 +263,123 @@ public class InteractConsumer {
     }
 
     // =========================================================
-    // =============== 新增的核心业务逻辑：兴趣演化 ================
+    // =============== 核心演化逻辑：行为池维护与演化 ================
     // =========================================================
 
-    /**
-     * 异步触发用户的兴趣向量演化
-     */
-    private void triggerInterestEvolution(Long userId, Long mediaId, String action) {
+    private void updateBehaviorSequence(String userId, String mediaId, String behaviorType) {
         try {
-            // 1. 获取刚刚被互动的视频的向量特征
-            // 注意：请确保 documentVectorMediaService 有能获取到 512维 向量的方法
-            // 比如下面假设你的 Media 对象有个 getVector() 方法返回 float[]
-            var mediaInfo = documentVectorMediaService.getById(String.valueOf(mediaId));
-            // 假设 mediaInfo.getVideoEmbedding() 返回的是 List<Float>
-            List<Float> embeddingList = mediaInfo.getVideoEmbedding();
-            if (embeddingList == null || embeddingList.isEmpty()) {
-                log.warn("视频特征不存在，无法演化兴趣。mediaId: {}", mediaId);
-                return;
+            // 1. 获取视频语义向量 (K) 与 业务特征 (V)
+            byte[] mediaVector512 = documentVectorMediaService.getVectorByMediaId(mediaId);
+            if (mediaVector512 == null) return;
+
+            float[] businessMeta = getBusinessMetaVector(mediaId, behaviorType);
+            byte[] vSnapshotVector = combineVectorWithMeta(mediaVector512, businessMeta);
+
+            String kGlobal = K_GLOBAL_PREFIX + userId;
+            String vGlobal = V_GLOBAL_PREFIX + userId;
+            String counterKey = COUNTER_PREFIX + userId;
+
+            // 2. 更新 Redis 滑动窗口池 (定长 24)
+            byteRedisTemplate.opsForList().rightPush(kGlobal, mediaVector512);
+            byteRedisTemplate.opsForList().trim(kGlobal, -GLOBAL_CAPACITY, -1);
+
+            byteRedisTemplate.opsForList().rightPush(vGlobal, vSnapshotVector);
+            byteRedisTemplate.opsForList().trim(vGlobal, -GLOBAL_CAPACITY, -1);
+
+            // 3. 步进计数，每 4 次行为触发一次深度演化
+            Long count = stringRedisTemplate.opsForValue().increment(counterKey);
+            stringRedisTemplate.expire(counterKey, 7, TimeUnit.DAYS);
+
+            if (count != null && count % TRIGGER_STEP == 0) {
+                processEvolution(userId, kGlobal, vGlobal);
             }
 
-            // 手动转换，避免对象数组开销
-            float[] mediaVector = new float[embeddingList.size()];
-            for (int i = 0; i < embeddingList.size(); i++) {
-                // 自动处理可能的 Float -> float 拆箱
-                mediaVector[i] = embeddingList.get(i);
-            }
+            // 设置池子有效期
+            byteRedisTemplate.expire(kGlobal, 7, TimeUnit.DAYS);
+            byteRedisTemplate.expire(vGlobal, 7, TimeUnit.DAYS);
 
-            // 2. 从 Redis 获取用户之前的长期兴趣向量
-            float[] oldInterest = documentUserProfileService.getUserInterestVector(String.valueOf(userId));
-
-            if (oldInterest == null) {
-                // 如果是新用户第一次互动，用 0 向量初始化 (或者用这次视频的向量作为初始兴趣)
-                oldInterest = new float[512];
-            }
-
-            float[] fuseUserInterest = vectorService.fuseUserInterest(
-                    oldInterest,
-                    List.of(mediaVector),
-                    List.of(action)
-            );
-
-            documentUserProfileService.updateUserProfile(String.valueOf(userId),mediaVector,fuseUserInterest,new Date());
-
-            log.info("🔮 用户 {} 兴趣演化完成！动作: {}", userId, action);
-
+            log.info("📊 用户 {} 行为序列已更新: {}", userId, behaviorType);
         } catch (Exception e) {
-            log.error("❌ 用户 {} 兴趣演化失败", userId, e);
+            log.error("❌ 画像演化链路异常: {}", e.getMessage());
         }
+    }
+
+    private void processEvolution(String userId, String kGlobal, String vGlobal) {
+        List<byte[]> globalKList = byteRedisTemplate.opsForList().range(kGlobal, 0, -1);
+        if (globalKList == null || globalKList.size() < GLOBAL_CAPACITY) {
+            log.info("⏳ 用户 {} 池子未满 ({} / 24)，跳过深度演化", userId, globalKList == null ? 0 : globalKList.size());
+            return;
+        }
+
+        try {
+            List<byte[]> globalVList = byteRedisTemplate.opsForList().range(vGlobal, 0, -1);
+            float[] currentQuery = documentUserProfileService.getUserQueryVector(userId);
+            List<InterestCentroid> longTermCentroids = documentUserProfileService.getInterestCentroids(userId);
+
+            // 构建 gRPC 请求
+            UserInterestRequest.Builder builder = UserInterestRequest.newBuilder();
+            if (currentQuery != null) {
+                for (float f : currentQuery) builder.addQueryEmbedding(f);
+            }
+
+            for (int i = 0; i < globalKList.size(); i++) {
+                ShortTermItem item = ShortTermItem.newBuilder()
+                        .addAllEmbedding(Floats.asList(bytesToFloats(globalKList.get(i))))
+                        .addAllBizLabels(Floats.asList(bytesToFloats(globalVList.get(i), VECTOR_DIM, BIZ_DIM)))
+                        .build();
+                builder.addShortTerm(item);
+            }
+
+            if (longTermCentroids != null) builder.addAllLongTerm(longTermCentroids);
+
+            // 调用 Python 模型
+            UserInterestResponse response = userModelStub.getUserInterestVector(builder.build());
+            if ("ok".equals(response.getStatus())) {
+                float[] evolvedUserVec = Floats.toArray(response.getUserVectorList());
+                documentUserProfileService.updateUserProfile(userId, evolvedUserVec, new Date());
+                log.info("✅ 互动链路：用户 [{}] 画像演化成功", userId);
+            }
+        } catch (Exception e) {
+            log.error("❌ gRPC 演化请求失败: ", e);
+        }
+    }
+
+    // ======================== 工具辅助方法 ========================
+
+    private float[] getBusinessMetaVector(String mediaId, String behaviorType) {
+        float[] meta = new float[4];
+        // 第 0 位作为权重标识：点赞收藏给予比搜索更高的固定分值
+        meta[0] = behaviorType.equals("COLLECT") ? 2.0f : 1.5f;
+        meta[1] = getZSetLogCount("interaction:events:window:like:" + mediaId);
+        meta[2] = getZSetLogCount("interaction:events:window:collection:" + mediaId);
+        meta[3] = getZSetLogCount("interaction:events:window:comment:" + mediaId);
+        return meta;
+    }
+
+    private float getZSetLogCount(String key) {
+        Long count = stringRedisTemplate.opsForZSet().zCard(key);
+        return (count == null || count == 0) ? 0.0f : (float) Math.log1p(count);
+    }
+
+    private byte[] combineVectorWithMeta(byte[] semantic, float[] meta) {
+        ByteBuffer buffer = ByteBuffer.allocate(semantic.length + (meta.length * 4));
+        buffer.put(semantic);
+        for (float f : meta) buffer.putFloat(f);
+        return buffer.array();
+    }
+
+    private float[] bytesToFloats(byte[] bytes) {
+        FloatBuffer fb = ByteBuffer.wrap(bytes).asFloatBuffer();
+        float[] floats = new float[fb.remaining()];
+        fb.get(floats);
+        return floats;
+    }
+
+    private float[] bytesToFloats(byte[] bytes, int offset, int length) {
+        ByteBuffer buffer = ByteBuffer.wrap(bytes);
+        buffer.position(offset * 4);
+        float[] result = new float[length];
+        for (int i = 0; i < length; i++) result[i] = buffer.getFloat();
+        return result;
     }
 }

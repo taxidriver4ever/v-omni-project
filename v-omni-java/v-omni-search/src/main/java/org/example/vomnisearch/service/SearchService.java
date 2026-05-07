@@ -2,10 +2,8 @@ package org.example.vomnisearch.service;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.example.vomnisearch.dto.SearchMediaRequestDto;
-import org.example.vomnisearch.dto.UserContent;
 import org.example.vomnisearch.vo.RecommendMediaVo;
 import org.example.vomnisearch.vo.SearchMediaVo;
-import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.List;
 

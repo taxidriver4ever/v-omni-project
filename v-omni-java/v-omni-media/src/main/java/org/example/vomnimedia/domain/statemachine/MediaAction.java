@@ -150,7 +150,7 @@ public class MediaAction {
         }
 
         String author = avatarAndAuthorDto.getAuthor();
-        String avatar = avatarAndAuthorDto.getAvatar();
+        String avatar = avatarAndAuthorDto.getAvatarPath();
         Date updateDate = new Date();
 
         // 2. 构造 ES PO 对象 (对应你新的双向量 Mapping)

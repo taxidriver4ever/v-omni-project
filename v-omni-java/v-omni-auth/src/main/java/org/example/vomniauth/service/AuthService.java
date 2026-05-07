@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.example.vomniauth.domain.statemachine.AuthState;
 import org.example.vomniauth.dto.AuthCodeRequestDTO;
+import org.example.vomniauth.dto.BasicInfoDto;
 
 import java.util.Map;
 
@@ -13,4 +14,5 @@ public interface AuthService {
     AuthState processLoginCode(AuthCodeRequestDTO authCodeRequestDTO);
     Map<String,String> verifyLoginCode(AuthCodeRequestDTO authCodeRequestDTO);
     void logout(HttpServletResponse response, String accessToken);
+    void setBasicInfo(BasicInfoDto basicInfoDto);
 }
