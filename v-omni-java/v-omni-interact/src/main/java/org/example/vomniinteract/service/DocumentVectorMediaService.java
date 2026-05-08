@@ -17,5 +17,5 @@ public interface DocumentVectorMediaService {
     void bulkUpdateCounts(Map<String, Map<String, Integer>> bulkUpdates);
     DocumentVectorMediaPo getById(String id);
     RecommendMediaVo getRecommendVoById(String id);
-
+    List<Float> getVectorByMediaId(String mediaId) throws IOException;
 }

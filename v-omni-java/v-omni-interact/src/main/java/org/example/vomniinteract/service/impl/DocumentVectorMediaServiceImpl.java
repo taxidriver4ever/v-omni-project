@@ -12,6 +12,7 @@ import org.example.vomniinteract.vo.RecommendMediaVo;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.*;
 
 @Slf4j
@@ -22,6 +23,8 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
     private final ElasticsearchClient client;
 
     private static final String INDEX = "vector_media_index";
+
+    private static final String FIELD_VIDEO_VECTOR = "video_embedding";
 
     /**
      * 【补充方法】根据 ID 获取视频文档（包含向量）
@@ -133,6 +136,33 @@ public class DocumentVectorMediaServiceImpl implements DocumentVectorMediaServic
         });
 
         executeBulk(br, "同步视频互动计数");
+    }
+
+    @Override
+    public List<Float> getVectorByMediaId(String mediaId) throws IOException {
+        if (mediaId == null || mediaId.isBlank()) return null;
+
+        GetResponse<DocumentVectorMediaPo> response = client.get(g -> g
+                        .index(INDEX)
+                        .id(mediaId)
+                        .sourceIncludes(FIELD_VIDEO_VECTOR), // 仅查询单个向量字段
+                DocumentVectorMediaPo.class
+        );
+
+        DocumentVectorMediaPo po = response.source();
+        if (po == null || po.getVideoEmbedding() == null) {
+            log.warn("MediaId: {} 向量数据不完整", mediaId);
+            return null;
+        }
+
+        List<Float> vVec = po.getVideoEmbedding();
+
+        if (vVec.size() != 512) {
+            log.error("向量维度异常，预期512: video={}", vVec.size());
+            return null;
+        }
+
+        return vVec;
     }
 
     /**

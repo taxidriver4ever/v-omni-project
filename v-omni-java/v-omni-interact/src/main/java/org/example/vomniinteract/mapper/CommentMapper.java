@@ -10,15 +10,18 @@ import java.util.List;
 
 @Mapper
 public interface CommentMapper {
-    @Insert("INSERT INTO u_comment(id, user_id, parent_id, root_id, media_id, content ,deleted, create_time)" +
-            "VALUES(#{id},#{userId},#{parentId},#{rootId},#{mediaId},#{content},0,#{createTime})")
-    int insertComment(CommentPo commentPo);
 
     /**
-     * 根据 root_id 逻辑删除整条评论树
+     * 批量插入评论
      */
-    @Update("UPDATE u_comment SET deleted = 1 WHERE root_id = #{rootId}")
-    int deleteRepliesByRootId(@Param("rootId") Long rootId);
+    int insertCommentBatch(@Param("list") List<CommentPo> list);
+
+    /**
+     * 批量级联删除
+     * 1. 删除 id 在列表中的评论（针对普通删除和根评论本身）
+     * 2. 删除 root_id 在列表中的评论（针对根评论下的所有子孙评论）
+     */
+    int deleteCommentsBatch(@Param("commentIds") List<Long> commentIds, @Param("rootIds") List<Long> rootIds);
 
     /**
      * 根据 id 逻辑删除单条评论

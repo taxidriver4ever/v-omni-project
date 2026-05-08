@@ -2,19 +2,21 @@ package org.example.vomniinteract.service;
 
 import org.example.vomniinteract.dto.InteractionTaskDto;
 import org.example.vomniinteract.po.DocumentMediaInteractionPo;
+import org.example.vomniinteract.po.DocumentVectorMediaPo;
 import org.example.vomniinteract.vo.InteractionVo;
 import java.util.List;
 import java.util.Map;
 
 public interface DocumentMediaInteractionService {
-    // --- 批量维护文档 (视频发布/下架) ---
-    void bulkInsertMediaDocs(List<DocumentMediaInteractionPo> pos);
-    void bulkDeleteMediaDocs(List<Long> mediaIds);
 
-    // --- 批量互动操作 (供 Kafka 消费者调用) ---
-    // 包含点赞、取消点赞、收藏、取消收藏
-    void bulkProcessInteractions(List<InteractionTaskDto> tasks);
-
-    // --- 分页查询 ---
-    List<InteractionVo> findUserInteractionList(Long userId, String actionType, int page, int size);
+    void bulkSyncInteractions(List<DocumentMediaInteractionPo> addList, List<String> deleteIds);
+    List<DocumentMediaInteractionPo> findUserInteractionListFromEs(
+            Long userId,
+            String behavior,
+            Integer page,
+            Integer size
+    );
+    List<DocumentVectorMediaPo> findMediaListFromEs(List<String> mediaIds);
+    void asyncRefreshTop30Cache(Long userId, String zsetKey, String behavior);
+    void asyncUpdateMediaHash(DocumentVectorMediaPo po);
 }

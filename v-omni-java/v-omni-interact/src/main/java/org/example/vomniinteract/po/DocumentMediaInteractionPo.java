@@ -16,15 +16,11 @@ import java.util.List;
 @NoArgsConstructor
 public class DocumentMediaInteractionPo {
 
+    @JsonProperty("id")
+    private String id;
+
     @JsonProperty("media_id")
-    private Long mediaId;
-
-    @JsonProperty("cover_path")
-    private String coverPath;
-
-    @JsonProperty("like_count")
-    private Integer likeCount;
-    // 幕后功臣：ES 筛选用的 ID 数组
+    private String mediaId;
 
     @JsonProperty("user_id")
     private String userId;

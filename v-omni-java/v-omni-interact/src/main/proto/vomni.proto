@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+// 这里修改为你的 Java 项目包名
+package video_embed;
+
+option java_package = "org.example.vomniinteract.grpc";
+option java_multiple_files = true;
+option java_outer_classname = "VideoEmbedProto";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 文本 Embedding 服务（供 Java 搜索引擎调用）
+// ─────────────────────────────────────────────────────────────────────────────
+service TextEmbedService {
+  // Java 调用此方法，将用户搜索词转为 512 维向量
+  rpc GetTextEmbedding (TextEmbedRequest) returns (TextEmbedResponse);
+}
+
+message TextEmbedRequest {
+  string query_text = 1;
+}
+
+message TextEmbedResponse {
+  repeated float embedding = 1;   // 512 维融合向量
+  string status            = 2;   // "ok" | "error"
+  string message           = 3;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 视频 Embedding 服务（供视频入库使用）
+// ─────────────────────────────────────────────────────────────────────────────
+service VideoEmbedService {
+  rpc GetVideoEmbedding (VideoEmbedRequest) returns (VideoEmbedResponse);
+}
+
+message VideoEmbedRequest {
+  string video_url = 1;
+  string title     = 2;
+}
+
+message VideoEmbedResponse {
+  repeated float embedding = 1;
+  string status            = 2;
+  string message           = 3;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 用户兴趣模型服务（供推荐排序使用）
+// ─────────────────────────────────────────────────────────────────────────────
+service UserModelService {
+  rpc GetLongTermInterest (LongTermInterestRequest) returns (LongTermInterestResponse);
+  rpc GetUserInterestVector (UserInterestRequest) returns (UserInterestResponse);
+}
+
+// --- 以下是推荐系统相关的消息结构 ---
+
+message HistoryItem {
+  repeated float embedding  = 1;
+  repeated float biz_labels = 2;
+}
+
+message LongTermInterestRequest {
+  repeated HistoryItem history = 1;
+}
+
+message InterestCentroid {
+  repeated float embedding  = 1;
+  repeated float biz_labels = 2;
+}
+
+message LongTermInterestResponse {
+  repeated InterestCentroid centroids = 1;
+  string status                       = 2;
+  string message                      = 3;
+}
+
+message ShortTermItem {
+  repeated float embedding  = 1;
+  repeated float biz_labels = 2;
+}
+
+message UserInterestRequest {
+  repeated float          query_embedding = 1;
+  repeated ShortTermItem  short_term      = 2;
+  repeated InterestCentroid long_term     = 3;
+}
+
+message UserInterestResponse {
+  repeated float user_vector = 1;
+  repeated float short_weights = 2;
+  repeated float long_weights  = 3;
+  string status  = 4;
+  string message = 5;
+}

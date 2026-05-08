@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.example.vomniinteract.mapper.CommentMapper">
+
+    <!-- 批量插入评论 -->
+    <insert id="insertCommentBatch" parameterType="java.util.List">
+        INSERT INTO u_comment (
+        id,
+        user_id,
+        media_id,
+        root_id,
+        parent_id,
+        content,
+        create_time
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+            #{item.id},
+            #{item.userId},
+            #{item.mediaId},
+            #{item.rootId},
+            #{item.parentId},
+            #{item.content},
+            #{item.createTime}
+            )
+        </foreach>
+    </insert>
+
+    <!-- 批量级联删除 -->
+    <delete id="deleteCommentsBatch">
+        DELETE FROM u_comment
+        WHERE
+        id IN
+        <foreach collection="commentIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        <if test="rootIds != null and !rootIds.isEmpty()">
+            OR root_id IN
+            <foreach collection="rootIds" item="rid" open="(" separator="," close=")">
+                #{rid}
+            </foreach>
+        </if>
+    </delete>
+
+</mapper>

@@ -1,6 +1,8 @@
 package org.example.vomnisearch.comsumer;
 
 import com.google.common.primitives.Floats;
+import io.lettuce.core.KeyValue;
+import io.lettuce.core.api.sync.RedisCommands;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -56,11 +58,17 @@ public class SearchConsumer {
     private UserModelServiceGrpc.UserModelServiceBlockingStub userModelStub;
     @Resource
     private HotWordRedisService hotWordRedisService;
+    @Resource
+    private RedisCommands<String, String> redisCommands;
 
     // Redis Key 定义
     private final static String K_GLOBAL_PREFIX = "behavior:global:k:user_id:";
     private final static String V_GLOBAL_PREFIX = "behavior:global:v:user_id:";
     private final static String COUNTER_PREFIX = "behavior:counter:user_id:";
+
+    private static final String TS_MEDIA_LIKE_PREFIX = "interact:ts:media:like:";
+    private static final String TS_MEDIA_COLLECTION_PREFIX = "interact:ts:media:collection:";
+    private static final String TS_MEDIA_COMMENT_PREFIX = "interact:ts:media:comment:";
 
     // 架构参数
     private final static int GLOBAL_CAPACITY = 24;
@@ -254,17 +262,66 @@ public class SearchConsumer {
     }
 
     private float[] getBusinessMetaVector(String mediaId) {
-        float[] meta = new float[4];
-        meta[0] = 0.0f; // placeholder
-        meta[1] = getZSetLogCount("interaction:events:window:like:" + mediaId);
-        meta[2] = getZSetLogCount("interaction:events:window:collection:" + mediaId);
-        meta[3] = getZSetLogCount("interaction:events:window:comment:" + mediaId);
+        // 新的 meta 只有三维：点赞增长率、收藏增长率、评论增长率
+        float[] meta = new float[3];
+
+        meta[0] = getTimeSeriesGrowthRate(TS_MEDIA_LIKE_PREFIX + mediaId);       // 点赞增长率
+        meta[1] = getTimeSeriesGrowthRate(TS_MEDIA_COLLECTION_PREFIX + mediaId); // 收藏增长率
+        meta[2] = getTimeSeriesGrowthRate(TS_MEDIA_COMMENT_PREFIX + mediaId);    // 评论增长率
+
         return meta;
     }
 
-    private float getZSetLogCount(String key) {
-        Long count = stringRedisTemplate.opsForZSet().zCard(key);
-        return (count == null || count == 0) ? 0.0f : (float) Math.log1p(count);
+    /**
+     * 计算过去一天相对于前一天的增长率
+     */
+    private float getTimeSeriesGrowthRate(String tsKey) {
+        try {
+            long now = System.currentTimeMillis();
+            long todayStart = getDayStartTs(now);
+            long yesterdayStart = todayStart - 24 * 60 * 60 * 1000L;
+            long yesterdayEnd = todayStart - 1;
+
+            long todaySum = sumTimeSeries(tsKey, todayStart, now);
+            long yesterdaySum = sumTimeSeries(tsKey, yesterdayStart, yesterdayEnd);
+
+            if (yesterdaySum == 0) return 0.0f;
+            return (float)(todaySum - yesterdaySum) / yesterdaySum;
+        } catch (Exception e) {
+            return 0.0f;
+        }
+    }
+
+    /**
+     * 获取当天 0 点时间戳
+     */
+    private long getDayStartTs(long ts) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(ts);
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        return cal.getTimeInMillis();
+    }
+
+    /**
+     * sum TS 时间序列指定区间
+     */
+    private long sumTimeSeries(String tsKey, long from, long to) {
+        List<KeyValue<String, String>> range = redisCommands.dispatch(
+                io.lettuce.core.protocol.CommandType.valueOf("TS.RANGE"),
+                new io.lettuce.core.output.KeyValueListOutput<>(io.lettuce.core.codec.StringCodec.UTF8),
+                new io.lettuce.core.protocol.CommandArgs<>(io.lettuce.core.codec.StringCodec.UTF8)
+                        .addKey(tsKey)
+                        .add(from)
+                        .add(to)
+                        .add("AGGREGATION")
+                        .add("SUM")
+                        .add(3600) // 按小时聚合
+        );
+
+        return range.stream().mapToLong(kv -> Long.parseLong(kv.getValue())).sum();
     }
 
     private byte[] combineVectorWithMeta(byte[] semantic, float[] meta) {

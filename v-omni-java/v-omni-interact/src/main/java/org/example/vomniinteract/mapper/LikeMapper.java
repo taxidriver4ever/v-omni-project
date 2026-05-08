@@ -7,12 +7,11 @@ import java.util.List;
 
 @Mapper
 public interface LikeMapper {
-    @Insert("INSERT IGNORE INTO u_like(id, user_id, media_id, create_time) " +
-            "VALUES(#{id}, #{userId}, #{mediaId}, #{createTime})")
-    int insertLike(LikePo likePo);
 
-    @Delete("DELETE FROM u_like WHERE user_id = #{userId} AND media_id = #{mediaId}")
-    int deleteLike(@Param("userId") Long userId, @Param("mediaId") Long mediaId);
+    int insertLikeBatch(@Param("list") List<LikePo> likeList);
+
+    int deleteLikeBatch(@Param("list") List<LikePo> likeList);
+
 
     @Select("SELECT id "+
             "FROM u_like " +

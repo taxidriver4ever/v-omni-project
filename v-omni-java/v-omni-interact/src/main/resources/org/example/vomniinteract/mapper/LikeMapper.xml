@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.example.vomniinteract.mapper.LikeMapper">
+
+    <!-- 批量插入点赞记录 -->
+    <!-- 使用 INSERT IGNORE 配合唯一索引实现幂等性 -->
+    <insert id="insertLikeBatch" parameterType="java.util.List">
+        INSERT IGNORE INTO u_like (
+        id,
+        user_id,
+        media_id,
+        create_time
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+            #{item.id},
+            #{item.userId},
+            #{item.mediaId},
+            #{item.createTime}
+            )
+        </foreach>
+    </insert>
+
+    <!-- 批量删除点赞记录 -->
+    <!-- 使用行构造器 (user_id, media_id) 实现复合主键/索引的批量删除 -->
+    <delete id="deleteLikeBatch" parameterType="java.util.List">
+        DELETE FROM u_like
+        WHERE (user_id, media_id) IN
+        <foreach collection="list" item="item" open="(" separator="," close=")">
+            (#{item.userId}, #{item.mediaId})
+        </foreach>
+    </delete>
+
+</mapper>

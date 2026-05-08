@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.example.vomniinteract.mapper.CollectionMapper">
+
+    <!-- 批量插入收藏记录 -->
+    <!-- INSERT IGNORE 确保即使重复消费 Kafka 消息也不会因为主键冲突报错 -->
+    <insert id="insertCollectionBatch" parameterType="java.util.List">
+        INSERT IGNORE INTO u_collection (
+        id,
+        user_id,
+        media_id,
+        create_time
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+            #{item.id},
+            #{item.userId},
+            #{item.mediaId},
+            #{item.createTime}
+            )
+        </foreach>
+    </insert>
+
+    <!-- 批量删除收藏记录 -->
+    <!-- 利用 MySQL 行构造器语法，一次性根据 (用户ID, 视频ID) 二元组删除记录 -->
+    <delete id="deleteCollectionBatch" parameterType="java.util.List">
+        DELETE FROM u_collection
+        WHERE (user_id, media_id) IN
+        <foreach collection="list" item="item" open="(" separator="," close=")">
+            (#{item.userId}, #{item.mediaId})
+        </foreach>
+    </delete>
+
+</mapper>

@@ -7,20 +7,30 @@ import org.example.vomniinteract.mapper.CollectionMapper;
 import org.example.vomniinteract.mapper.CommentLikeMapper;
 import org.example.vomniinteract.mapper.CommentMapper;
 import org.example.vomniinteract.mapper.LikeMapper;
+import org.example.vomniinteract.po.DocumentMediaInteractionPo;
 import org.example.vomniinteract.po.DocumentVectorMediaPo;
+import org.example.vomniinteract.service.DocumentMediaInteractionService;
 import org.example.vomniinteract.service.DocumentVectorMediaService;
 import org.example.vomniinteract.service.InteractService;
 import org.example.vomniinteract.util.SecurityUtils;
 import org.example.vomniinteract.util.SnowflakeIdWorker;
+import org.example.vomniinteract.vo.InteractionVo;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.DefaultTypedTuple;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -69,24 +79,20 @@ public class InteractServiceImpl implements InteractService {
     private DocumentVectorMediaService documentVectorMediaService;
 
     @Resource
-    private SnowflakeIdWorker snowflakeIdWorker;
-
-    @Resource
-    private CommentMapper commentMapper;
+    private DocumentMediaInteractionService documentMediaInteractionService;
 
     private final static String MEDIA_INFO_PREFIX = "interact:media:info:";
 
     private final static String MEDIA_LIKE_USER_ID_SET_PREFIX = "interact:like:set:media_id:";
+    private final static String MEDIA_LIKE_MEDIA_ID_ZSET_PREFIX = "interact:like:zset:user_id:";
     private final static String LOCK_LIKE_KEY_PREFIX = "interact:like:lock:";
 
     private final static String MEDIA_COLLECTION_USER_ID_SET_PREFIX = "interact:collection:set:media_id:";
+    private final static String MEDIA_COLLECTION_MEDIA_ID_ZSET_PREFIX = "interact:collection:zset:user_id:";
     private final static String LOCK_COLLECTION_KEY_PREFIX = "interact:collection:lock:";
 
     private final static String COMMENT_LIKE_USER_ID_SET_PREFIX = "interact:comment_like:set:comment_id:";
     private final static String LOCK_COMMENT_LIKE_KEY_PREFIX = "interact:comment_like:lock:";
-
-    private final static String MEDIA_COMMENT_COMMENT_ID_SET_PREFIX = "interact:comment:set:media_id:";
-    private final static String LOCK_COMMENT_PREFIX = "interact:comment:lock:";
 
     private final static int SET_TTL = 60 * 60 * 24;
     private final static int HASH_TTL = 60 * 60 * 24;
@@ -96,11 +102,14 @@ public class InteractServiceImpl implements InteractService {
     @Override
     public Long doLike(String mediaId) {
         Long userId = SecurityUtils.getCurrentUserId();
+        Date now = new Date();
         long result = stringRedisTemplate.execute(
                 doLikeCollectionScript,
-                List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_LIKE_USER_ID_SET_PREFIX + mediaId),
+                List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_LIKE_USER_ID_SET_PREFIX + mediaId, MEDIA_LIKE_MEDIA_ID_ZSET_PREFIX + userId),
                 String.valueOf(userId),
-                "like_count"
+                "like_count",
+                now.toInstant().toEpochMilli(),
+                mediaId
         );
         if(result == -1L) {
             RLock lock = redissonClient.getLock(LOCK_LIKE_KEY_PREFIX + mediaId);
@@ -145,7 +154,7 @@ public class InteractServiceImpl implements InteractService {
                                     TimeUnit.SECONDS
                             );
                             doLikeKafkaTemplate.send("database-like-topic",
-                                    new DoLikeDto("like", mediaId, String.valueOf(userId), new Date()));
+                                    new DoLikeDto("like", mediaId, String.valueOf(userId), now));
                             return 1L;
                         }
                     } finally {
@@ -159,7 +168,7 @@ public class InteractServiceImpl implements InteractService {
         }
         else if(result == 1L) {
             doLikeKafkaTemplate.send("database-like-topic",
-                    new DoLikeDto("like", mediaId, String.valueOf(userId), new Date()));
+                    new DoLikeDto("like", mediaId, String.valueOf(userId), now));
             return 1L;
         }
         return 0L;
@@ -168,11 +177,14 @@ public class InteractServiceImpl implements InteractService {
     @Override
     public Long cancelLike(String mediaId) {
         Long userId = SecurityUtils.getCurrentUserId();
+        Date now = new Date();
         long result = stringRedisTemplate.execute(
                 cancelLikeCollectionScript,
-                List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_LIKE_USER_ID_SET_PREFIX + mediaId),
+                List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_LIKE_USER_ID_SET_PREFIX + mediaId, MEDIA_LIKE_MEDIA_ID_ZSET_PREFIX + userId),
                 String.valueOf(userId),
-                "like_count"
+                "like_count",
+                now.toInstant().toEpochMilli(),
+                mediaId
         );
         if(result == -1L) {
             RLock lock = redissonClient.getLock(LOCK_LIKE_KEY_PREFIX + mediaId);
@@ -222,7 +234,7 @@ public class InteractServiceImpl implements InteractService {
                                     TimeUnit.SECONDS
                             );
                             doLikeKafkaTemplate.send("database-like-topic",
-                                    new DoLikeDto("cancel", mediaId, String.valueOf(userId), new Date()));
+                                    new DoLikeDto("cancel", mediaId, String.valueOf(userId), now));
                             return 1L;
                         }
                     } finally {
@@ -236,7 +248,7 @@ public class InteractServiceImpl implements InteractService {
         }
         else if(result == 1L) {
             doLikeKafkaTemplate.send("database-like-topic",
-                    new DoLikeDto("cancel", mediaId, String.valueOf(userId), new Date()));
+                    new DoLikeDto("cancel", mediaId, String.valueOf(userId), now));
             return 1L;
         }
         return 0L;
@@ -247,11 +259,14 @@ public class InteractServiceImpl implements InteractService {
     @Override
     public Long doCollection(String mediaId) {
         Long userId = SecurityUtils.getCurrentUserId();
+        Date now = new Date();
         long result = stringRedisTemplate.execute(
                 doLikeCollectionScript,
-                List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_COLLECTION_USER_ID_SET_PREFIX + mediaId),
+                List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_COLLECTION_USER_ID_SET_PREFIX + mediaId, MEDIA_COLLECTION_MEDIA_ID_ZSET_PREFIX + userId),
                 String.valueOf(userId),
-                "collection_count"
+                "collection_count",
+                now.toInstant().toEpochMilli(),
+                mediaId
         );
         if(result == -1L) {
             RLock lock = redissonClient.getLock(LOCK_COLLECTION_KEY_PREFIX + mediaId);
@@ -296,7 +311,7 @@ public class InteractServiceImpl implements InteractService {
                                     TimeUnit.SECONDS
                             );
                             doCollectionKafkaTemplate.send("database-collection-topic",
-                                    new DoCollectionDto("collection", mediaId, String.valueOf(userId), new Date()));
+                                    new DoCollectionDto("collection", mediaId, String.valueOf(userId), now));
                             return 1L;
                         }
                     } finally {
@@ -310,7 +325,7 @@ public class InteractServiceImpl implements InteractService {
         }
         else if(result == 1L) {
             doCollectionKafkaTemplate.send("database-collection-topic",
-                    new DoCollectionDto("collection", mediaId, String.valueOf(userId), new Date()));
+                    new DoCollectionDto("collection", mediaId, String.valueOf(userId), now));
             return 1L;
         }
         return 0L;
@@ -319,11 +334,14 @@ public class InteractServiceImpl implements InteractService {
     @Override
     public Long cancelCollection(String mediaId) {
         Long userId = SecurityUtils.getCurrentUserId();
+        Date now = new Date();
         long result = stringRedisTemplate.execute(
                 cancelLikeCollectionScript,
-                List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_COLLECTION_USER_ID_SET_PREFIX + mediaId),
+                List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_COLLECTION_USER_ID_SET_PREFIX + mediaId, MEDIA_COLLECTION_MEDIA_ID_ZSET_PREFIX + userId),
                 String.valueOf(userId),
-                "collection_count"
+                "collection_count",
+                now.toInstant().toEpochMilli(),
+                mediaId
         );
         if(result == -1L) {
             RLock lock = redissonClient.getLock(LOCK_COLLECTION_KEY_PREFIX + mediaId);
@@ -371,7 +389,7 @@ public class InteractServiceImpl implements InteractService {
                                     TimeUnit.SECONDS
                             );
                             doCollectionKafkaTemplate.send("database-collection-topic",
-                                    new DoCollectionDto("cancel", mediaId, String.valueOf(userId), new Date()));
+                                    new DoCollectionDto("cancel", mediaId, String.valueOf(userId), now));
                             return 1L;
                         }
                     } finally {
@@ -385,7 +403,7 @@ public class InteractServiceImpl implements InteractService {
         }
         else if(result == 1L) {
             doCollectionKafkaTemplate.send("database-collection-topic",
-                    new DoCollectionDto("cancel", mediaId, String.valueOf(userId), new Date()));
+                    new DoCollectionDto("cancel", mediaId, String.valueOf(userId), now));
             return 1L;
         }
         return 0L;
@@ -493,6 +511,86 @@ public class InteractServiceImpl implements InteractService {
         return 0L;
     }
 
+    @Override
+    public List<InteractionVo> selectUserLike(Integer page) {
+        if (page == null || page <= 0) return List.of();
+
+        Long userId = SecurityUtils.getCurrentUserId();
+        String userZsetKey = MEDIA_LIKE_MEDIA_ID_ZSET_PREFIX + userId;
+        int pageSize = 10;
+        List<String> mediaIds = new ArrayList<>();
+
+        // 1. 尝试从 Redis ZSet 获取 (冷热分离：前3页)
+        if (page <= 3) {
+            int start = (page - 1) * pageSize;
+            int end = start + pageSize - 1;
+            Set<String> redisIds = stringRedisTemplate.opsForZSet().reverseRange(userZsetKey, start, end);
+            if (redisIds != null && !redisIds.isEmpty()) {
+                mediaIds.addAll(redisIds);
+                stringRedisTemplate.expire(userZsetKey, 7, TimeUnit.DAYS);
+            }
+        }
+
+        // 2. Redis 没命中或超过 3 页，从 ES 捞
+        if (mediaIds.isEmpty()) {
+            List<DocumentMediaInteractionPo> esInteractions = documentMediaInteractionService
+                    .findUserInteractionListFromEs(userId, "like", page, pageSize);
+            if (esInteractions.isEmpty()) return List.of();
+
+            mediaIds = esInteractions.stream()
+                    .map(DocumentMediaInteractionPo::getMediaId)
+                    .collect(Collectors.toList());
+
+            // 第一页缺失，触发 Top 30 异步预热
+            if (page == 1) {
+                documentMediaInteractionService.asyncRefreshTop30Cache(userId, userZsetKey, "like");
+            }
+        }
+
+        // 3. 核心：组装完整视图数据 (Redis Pipeline + ES 差集补偿)
+        return buildInteractionVos(mediaIds, userId);
+    }
+
+    @Override
+    public List<InteractionVo> selectUserCollection(Integer page) {
+        if (page == null || page <= 0) return List.of();
+
+        Long userId = SecurityUtils.getCurrentUserId();
+        String userZsetKey = MEDIA_COLLECTION_MEDIA_ID_ZSET_PREFIX + userId;
+        int pageSize = 10;
+        List<String> mediaIds = new ArrayList<>();
+
+        // 1. 尝试从 Redis ZSet 获取 (冷热分离：前3页)
+        if (page <= 3) {
+            int start = (page - 1) * pageSize;
+            int end = start + pageSize - 1;
+            Set<String> redisIds = stringRedisTemplate.opsForZSet().reverseRange(userZsetKey, start, end);
+            if (redisIds != null && !redisIds.isEmpty()) {
+                mediaIds.addAll(redisIds);
+                stringRedisTemplate.expire(userZsetKey, 7, TimeUnit.DAYS);
+            }
+        }
+
+        // 2. Redis 没命中或超过 3 页，从 ES 捞
+        if (mediaIds.isEmpty()) {
+            List<DocumentMediaInteractionPo> esInteractions = documentMediaInteractionService
+                    .findUserInteractionListFromEs(userId, "collection", page, pageSize);
+            if (esInteractions.isEmpty()) return List.of();
+
+            mediaIds = esInteractions.stream()
+                    .map(DocumentMediaInteractionPo::getMediaId)
+                    .collect(Collectors.toList());
+
+            // 第一页缺失，触发 Top 30 异步预热
+            if (page == 1) {
+                documentMediaInteractionService.asyncRefreshTop30Cache(userId, userZsetKey, "collection");
+            }
+        }
+
+        // 3. 核心：组装完整视图数据 (Redis Pipeline + ES 差集补偿)
+        return buildInteractionVos(mediaIds, userId);
+    }
+
     // ================== 评论发布与删除 ==================
 
     @Override
@@ -529,4 +627,75 @@ public class InteractServiceImpl implements InteractService {
         return 1L;
     }
 
+
+    /**
+     * 批量组装视图模型 (VO)
+     */
+    private List<InteractionVo> buildInteractionVos(List<String> mediaIds, Long userId) {
+        Map<String, InteractionVo> voMap = new HashMap<>();
+        List<String> missingIds = new ArrayList<>();
+
+        // A. Pipeline 批量查询 Redis Hash (封面和点赞数)
+        List<Object> redisResults = stringRedisTemplate.executePipelined((RedisCallback<Object>) connection -> {
+            for (String mid : mediaIds) {
+                String key = MEDIA_INFO_PREFIX + mid;
+                byte[] rawKey = key.getBytes(StandardCharsets.UTF_8);
+                connection.hashCommands().hMGet(
+                        rawKey,
+                        "cover_path".getBytes(StandardCharsets.UTF_8),
+                        "like_count".getBytes(StandardCharsets.UTF_8)
+                );
+            }
+            return null;
+        });
+
+        for (int i = 0; i < mediaIds.size(); i++) {
+            String mid = mediaIds.get(i);
+            List<Object> fields = (List<Object>) redisResults.get(i);
+
+            // 判断缓存是否命中 (只要第一个字段 cover_path 不为空即视为命中)
+            if (fields != null && fields.size() >= 2 && fields.get(0) != null) {
+                voMap.put(mid, InteractionVo.builder()
+                        .mediaId(Long.valueOf(mid))
+                        .coverUrl(new String((byte[]) fields.get(0)))
+                        .likeCount(Integer.valueOf(new String((byte[]) fields.get(1))))
+                        .liked(checkRealTimeLiked(mid, userId)) // 校验实时状态
+                        .build());
+            } else {
+                missingIds.add(mid);
+            }
+        }
+
+        // B. 如果有 Redis 缺失，去 ES 批量捞 Media 索引
+        if (!missingIds.isEmpty()) {
+            List<DocumentVectorMediaPo> esMedias = documentMediaInteractionService.findMediaListFromEs(missingIds);
+            for (DocumentVectorMediaPo po : esMedias) {
+                InteractionVo vo = InteractionVo.builder()
+                        .mediaId(Long.valueOf(po.getId()))
+                        .coverUrl(po.getCoverPath())
+                        .likeCount(po.getLikeCount())
+                        .liked(checkRealTimeLiked(po.getId(), userId))
+                        .build();
+                voMap.put(po.getId(), vo);
+                // 异步回填媒体 Hash 缓存
+                documentMediaInteractionService.asyncUpdateMediaHash(po);
+            }
+        }
+
+        // C. 按照 mediaIds 原始顺序排列并返回
+        return mediaIds.stream()
+                .map(voMap::get)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 实时校验点赞状态 (面试点：解决缓存与数据库延迟的一致性方案)
+     */
+    private Boolean checkRealTimeLiked(String mediaId, Long userId) {
+        String key = MEDIA_COLLECTION_USER_ID_SET_PREFIX + mediaId;
+        // 查 Redis Set 判重
+        Boolean isMember = stringRedisTemplate.opsForSet().isMember(key, userId.toString());
+        return isMember != null && isMember;
+    }
 }

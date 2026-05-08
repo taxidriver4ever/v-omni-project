@@ -44,9 +44,7 @@ PUT /user_media_interaction_index
       "create_time": { 
         "type": "date",
         "format": "yyyy-MM-dd HH:mm:ss.SSS"
-      },
-      "cover_path": { "type": "keyword", "index": false },
-      "like_count": { "type": "integer" } 
+      }
     }
   }
 }

@@ -90,18 +90,16 @@ public class InteractController {
 
     @GetMapping("/user/like")
     public MyResult<List<InteractionVo>> personLike(@RequestParam(defaultValue = "1") Integer page) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        List<InteractionVo> likeUserList = documentMediaInteractionService.findUserInteractionList(userId, "like", page, 10);
-        if (likeUserList == null) return MyResult.error(404, "查询失败");
+        List<InteractionVo> likeUserList = interactService.selectUserLike(page);
+        if (likeUserList == null || likeUserList.isEmpty()) return MyResult.error(404, "查询失败");
         return MyResult.success(likeUserList);
     }
 
     @GetMapping("/user/collection")
     public MyResult<List<InteractionVo>> personCollection(Integer page) {
-        Long userId = SecurityUtils.getCurrentUserId();
-        List<InteractionVo> collectionUserList = documentMediaInteractionService.findUserInteractionList(userId, "collection", page, 10);
-        if (collectionUserList == null) return MyResult.error(404,"找不到视频");
-        return MyResult.success(collectionUserList);
+        List<InteractionVo> collectUserList = interactService.selectUserCollection(page);
+        if (collectUserList == null || collectUserList.isEmpty()) return MyResult.error(404, "查询失败");
+        return MyResult.success(collectUserList);
     }
 
     @PostMapping("/root/comment")

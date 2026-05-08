@@ -33,61 +33,6 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
 
     private static final String INDEX_NAME = "user_media_comments_index";
 
-    @Override
-    public void saveComment(DocumentCommentPo po) {
-        try {
-            client.index(i -> i
-                    .index(INDEX_NAME)
-                    .id(po.getCommentId().toString())
-                    .document(po)
-            );
-        } catch (IOException e) {
-            log.error("ES存入评论失败", e);
-        }
-    }
-
-    @Override
-    public void deleteComment(Long commentId, Long rootId) {
-        try {
-            // 1. 判断是否为根评论 (rootId 为 0 或 null 通常代表它是根)
-            if (rootId == null || rootId == 0) {
-                log.info("检测到删除根评论, 将同步删除所有回复. rootId: {}", commentId);
-
-                // 执行 deleteByQuery: 删除所有 root_id 等于该 commentId 的回复
-                // 以及 comment_id 等于该 id 的根评论本身
-                client.deleteByQuery(dbq -> dbq
-                        .index(INDEX_NAME)
-                        .query(q -> q
-                                .bool(b -> b
-                                        .should(s1 -> s1.term(t -> t.field("root_id").value(commentId)))
-                                        .should(s2 -> s2.term(t -> t.field("comment_id").value(commentId)))
-                                )
-                        )
-                );
-            } else {
-                // 2. 普通回复，直接删除自身
-                client.delete(d -> d.index(INDEX_NAME).id(commentId.toString()));
-                log.info("普通评论已删除. id: {}", commentId);
-            }
-        } catch (IOException e) {
-            log.error("ES执行删除评论失败, id: {}, rootId: {}", commentId, rootId, e);
-        }
-    }
-
-
-    @Override
-    public void updateCommentLikeCount(Long commentId, boolean isAdd) {
-        String script = isAdd ? "ctx._source.like_count++" : "ctx._source.like_count--";
-        try {
-            client.update(u -> u
-                            .index(INDEX_NAME)
-                            .id(commentId.toString())
-                            .script(s -> s.inline(i -> i.source(script)))
-                    , DocumentCommentPo.class);
-        } catch (IOException e) {
-            log.error("更新评论点赞数失败", e);
-        }
-    }
 
     @Override
     public List<CommentVo> findTopLevelComments(Long mediaId, int page, int size) {
@@ -167,7 +112,7 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
 
         for (DoCommentDto m : deleteMessages) {
             Long cId = Long.parseLong(m.getId());
-            Long rId = Long.parseLong(m.getRootId());
+            long rId = Long.parseLong(m.getRootId());
 
             if (rId == 0) {
                 rootIdsForCascade.add(cId);
