@@ -4,7 +4,7 @@ spring:
   data:
     redis:
       host: localhost
-      port: 6379
+      port: 16379
       database: 0
       timeout: 2000ms
       lettuce:
@@ -14,6 +14,8 @@ spring:
           min-idle: 5
           max-wait: 1000ms
           time-between-eviction-runs: 30s
+      password: ${V_OMNI_REDIS_PASSWORD}
+      username: ${V_OMNI_REDIS_USERNAME}
 
   # Kafka（关键修复点）
   kafka:
@@ -48,6 +50,3 @@ spring:
 
   elasticsearch:
     uris: http://localhost:19200
-
-minio:
-  base-url: http://localhost:9000  # 或者你实际的 Minio 访问地址

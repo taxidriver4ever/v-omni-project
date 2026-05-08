@@ -2,7 +2,7 @@ spring:
   profiles:
     active: dev  # 默认激活开发环境配置
   application:
-    name: v-omni-auth
+    name: v-omni-interact
 
   # Jackson 全局配置：处理前后端交互的时间格式和空值
   jackson:

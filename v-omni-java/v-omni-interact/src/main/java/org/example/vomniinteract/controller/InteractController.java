@@ -27,9 +27,6 @@ public class InteractController {
     private InteractService interactService;
 
     @Resource
-    private DocumentMediaInteractionService documentMediaInteractionService;
-
-    @Resource
     private DocumentCommentService documentCommentService;
 
     @PostMapping("/like")
