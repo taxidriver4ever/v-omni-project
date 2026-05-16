@@ -3,6 +3,7 @@ package org.example.vomniinteract.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -10,6 +11,7 @@ import java.util.Date;
 
 @AllArgsConstructor
 @Data
+@NoArgsConstructor
 public class DoCollectionDto implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;

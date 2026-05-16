@@ -21,7 +21,6 @@ spring:
   kafka:
     bootstrap-servers: localhost:19092
     producer:
-      # 使用 Json 序列化，方便发送对象
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     consumer:
@@ -30,15 +29,17 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       max-poll-records: 500
-      enable-auto-commit: true
+      # 1. 关闭自动提交，交给 Spring 事务管理
+      enable-auto-commit: false
       properties:
         spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
         spring.json.trusted.packages: "*"
     listener:
-      # 正确的批量配置位置
       type: batch
-      # 即使没满500条，超过这个时间也会强制交付给监听器
       poll-timeout: 1000ms
+      # 2. 配置 AckMode为 RECORD 或 BATCH
+      # 当有 @Transactional 时，Spring 会在整个事务成功后，自动帮你提交这批消息的 Offset
+      ack-mode: batch
 
 
   # MySQL

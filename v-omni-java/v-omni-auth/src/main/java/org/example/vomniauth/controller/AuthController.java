@@ -24,6 +24,7 @@ public class AuthController {
 
     @PostMapping("/register/code")
     public MyResult<String> sendRegisterCode(@RequestBody @Valid AuthCodeRequestDTO authCodeRequestDTO) {
+        System.out.println(authCodeRequestDTO);
         AuthState authState = authService.processAuthCode(authCodeRequestDTO);
         switch (authState) {
             case EXCEED_LIMIT -> {

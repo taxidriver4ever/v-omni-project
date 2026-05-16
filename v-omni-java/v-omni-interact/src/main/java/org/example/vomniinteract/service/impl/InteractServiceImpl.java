@@ -108,7 +108,7 @@ public class InteractServiceImpl implements InteractService {
                 List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_LIKE_USER_ID_SET_PREFIX + mediaId, MEDIA_LIKE_MEDIA_ID_ZSET_PREFIX + userId),
                 String.valueOf(userId),
                 "like_count",
-                now.toInstant().toEpochMilli(),
+                String.valueOf(now.toInstant().toEpochMilli()),
                 mediaId
         );
         if(result == -1L) {
@@ -183,7 +183,7 @@ public class InteractServiceImpl implements InteractService {
                 List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_LIKE_USER_ID_SET_PREFIX + mediaId, MEDIA_LIKE_MEDIA_ID_ZSET_PREFIX + userId),
                 String.valueOf(userId),
                 "like_count",
-                now.toInstant().toEpochMilli(),
+                String.valueOf(now.toInstant().toEpochMilli()),
                 mediaId
         );
         if(result == -1L) {
@@ -265,7 +265,7 @@ public class InteractServiceImpl implements InteractService {
                 List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_COLLECTION_USER_ID_SET_PREFIX + mediaId, MEDIA_COLLECTION_MEDIA_ID_ZSET_PREFIX + userId),
                 String.valueOf(userId),
                 "collection_count",
-                now.toInstant().toEpochMilli(),
+                String.valueOf(now.toInstant().toEpochMilli()),
                 mediaId
         );
         if(result == -1L) {
@@ -340,7 +340,7 @@ public class InteractServiceImpl implements InteractService {
                 List.of(MEDIA_INFO_PREFIX + mediaId, MEDIA_COLLECTION_USER_ID_SET_PREFIX + mediaId, MEDIA_COLLECTION_MEDIA_ID_ZSET_PREFIX + userId),
                 String.valueOf(userId),
                 "collection_count",
-                now.toInstant().toEpochMilli(),
+                String.valueOf(now.toInstant().toEpochMilli()),
                 mediaId
         );
         if(result == -1L) {

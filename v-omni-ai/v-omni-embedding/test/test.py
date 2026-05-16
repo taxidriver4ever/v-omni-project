@@ -152,134 +152,135 @@
 #     model = train_offline_rl(data, epochs=20000)  # 1000轮通常就能看到非常稳定的结果
 #     test_fine_inference(model)
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
 
-
-class VOmni_DLRM_v2(nn.Module):
-    def __init__(self, vocab_dims, dense_dim, video_dim, embed_dim):
-        """
-        vocab_dims: 字典，包含各离散特征的词表大小
-        dense_dim: 连续特征维度 (年龄 + 视频热度)
-        video_dim: 原始视频向量维度 (如 512)
-        embed_dim: 统一映射后的 Embedding 维度 (如 16)
-        """
-        super(VOmni_DLRM_v2, self).__init__()
-
-        # 1. 离散特征 (7个)
-        self.embed_user = nn.Embedding(vocab_dims['user'], embed_dim)
-        self.embed_item = nn.Embedding(vocab_dims['item'], embed_dim)
-        self.embed_cluster = nn.Embedding(vocab_dims['cluster'], embed_dim)
-        self.embed_sex = nn.Embedding(vocab_dims['sex'], embed_dim)
-        self.embed_country = nn.Embedding(vocab_dims['country'], embed_dim)
-        self.embed_province = nn.Embedding(vocab_dims['province'], embed_dim)
-        self.embed_city = nn.Embedding(vocab_dims['city'], embed_dim)
-
-        # 2. 连续特征 (Bottom MLP)
-        self.bottom_mlp = nn.Sequential(
-            nn.Linear(dense_dim, 32),
-            nn.ReLU(),
-            nn.Linear(32, embed_dim),
-            nn.ReLU()
-        )
-
-        # 3. 视频语义投影
-        self.video_proj = nn.Linear(video_dim, embed_dim)
-
-        # 4. 交互层参数计算
-        # 总向量数 = 7(离散) + 1(连续) + 1(投影) = 9
-        self.num_vectors = 9
-        self.num_interactions = (self.num_vectors * (self.num_vectors - 1)) // 2  # 36
-
-        # 5. Top MLP
-        # 输入 = 交叉项(36) + 连续特征输出(embed_dim)
-        self.top_mlp = nn.Sequential(
-            nn.Linear(self.num_interactions + embed_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, sparse_inputs, dense_inputs, video_vector):
-        """
-        sparse_inputs: 包含 7 个 id 的字典或 Tensor
-        dense_inputs: [Age, Popularity]
-        video_vector: [512]
-        """
-        # 提取所有离散向量
-        v_user = self.embed_user(sparse_inputs['user'])
-        v_item = self.embed_item(sparse_inputs['item'])
-        v_cluster = self.embed_cluster(sparse_inputs['cluster'])
-        v_sex = self.embed_sex(sparse_inputs['sex'])
-        v_country = self.embed_country(sparse_inputs['country'])
-        v_province = self.embed_province(sparse_inputs['province'])
-        v_city = self.embed_city(sparse_inputs['city'])
-
-        # 处理连续向量
-        v_dense = self.bottom_mlp(dense_inputs)
-
-        # 投影视频向量
-        v_video = self.video_proj(video_vector)
-
-        # --- 堆叠矩阵 [Batch, 9, 16] ---
-        combined = torch.stack([
-            v_user, v_item, v_cluster, v_sex,
-            v_country, v_province, v_city,
-            v_dense, v_video
-        ], dim=1)
-
-        # --- 批量矩阵乘法 (点积交融) ---
-        # [Batch, 9, 16] * [Batch, 16, 9] = [Batch, 9, 9]
-        dot_products = torch.bmm(combined, combined.transpose(1, 2))
-
-        # 提取上三角 (36个交叉特征)
-        indices = torch.triu_indices(self.num_vectors, self.num_vectors, offset=1)
-        interactions = dot_products[:, indices[0], indices[1]]
-
-        # 拼接原始连续特征输出并预测
-        x = torch.cat([interactions, v_dense], dim=1)
-        return self.top_mlp(x)
-
-
-# --- 测试函数 ---
-def run_v2_test():
-    # 模拟各字典大小 (根据你的 ES/MySQL 规模设定)
-    vocab_dims = {
-        'user': 1000, 'item': 5000, 'cluster': 8,
-        'sex': 3, 'country': 10, 'province': 35, 'city': 300
-    }
-
-    samples = 128
-    model = VOmni_DLRM_v2(vocab_dims, dense_dim=2, video_dim=512, embed_dim=16)
-
-    # 构造模拟输入
-    sparse_in = {k: torch.randint(0, v, (samples,)) for k, v in vocab_dims.items()}
-    dense_in = torch.rand(samples, 2)
-    video_in = torch.randn(samples, 512)
-    labels = torch.randint(0, 2, (samples, 1)).float()
-
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    criterion = nn.BCELoss()
-
-    print(f"模型初始化成功！参与交融的向量数: {model.num_vectors}，交叉项数: {model.num_interactions}")
-
-    # 单步训练测试
-    model.train()
-    optimizer.zero_grad()
-    output = model(sparse_in, dense_in, video_in)
-    loss = criterion(output, labels)
-    loss.backward()
-    optimizer.step()
-
-    print(f"单步测试 Loss: {loss.item():.4f}")
-    print("九个特征维度的深度交融矩阵运行正常。")
-
-
-if __name__ == "__main__":
-    run_v2_test()
+# import torch
+# import torch.nn as nn
+# import torch.optim as optim
+#
+#
+# class VOmni_DLRM_v2(nn.Module):
+#     def __init__(self, vocab_dims, dense_dim, video_dim, embed_dim):
+#         """
+#         vocab_dims: 字典，包含各离散特征的词表大小
+#         dense_dim: 连续特征维度 (年龄 + 视频热度)
+#         video_dim: 原始视频向量维度 (如 512)
+#         embed_dim: 统一映射后的 Embedding 维度 (如 16)
+#         """
+#         super(VOmni_DLRM_v2, self).__init__()
+#
+#         # 1. 离散特征 (7个)
+#         self.embed_user = nn.Embedding(vocab_dims['user'], embed_dim)
+#         self.embed_item = nn.Embedding(vocab_dims['item'], embed_dim)
+#         self.embed_cluster = nn.Embedding(vocab_dims['cluster'], embed_dim)
+#         self.embed_sex = nn.Embedding(vocab_dims['sex'], embed_dim)
+#         self.embed_country = nn.Embedding(vocab_dims['country'], embed_dim)
+#         self.embed_province = nn.Embedding(vocab_dims['province'], embed_dim)
+#         self.embed_city = nn.Embedding(vocab_dims['city'], embed_dim)
+#
+#         # 2. 连续特征 (Bottom MLP)
+#         self.bottom_mlp = nn.Sequential(
+#             nn.Linear(dense_dim, 32),
+#             nn.ReLU(),
+#             nn.Linear(32, embed_dim),
+#             nn.ReLU()
+#         )
+#
+#         # 3. 视频语义投影
+#         self.video_proj = nn.Linear(video_dim, embed_dim)
+#
+#         # 4. 交互层参数计算
+#         # 总向量数 = 7(离散) + 1(连续) + 1(投影) = 9
+#         self.num_vectors = 9
+#         self.num_interactions = (self.num_vectors * (self.num_vectors - 1)) // 2  # 36
+#
+#         # 5. Top MLP
+#         # 输入 = 交叉项(36) + 连续特征输出(embed_dim)
+#         self.top_mlp = nn.Sequential(
+#             nn.Linear(self.num_interactions + embed_dim, 64),
+#             nn.ReLU(),
+#             nn.Linear(64, 32),
+#             nn.ReLU(),
+#             nn.Linear(32, 1),
+#             nn.Sigmoid()
+#         )
+#
+#     def forward(self, sparse_inputs, dense_inputs, video_vector):
+#         """
+#         sparse_inputs: 包含 7 个 id 的字典或 Tensor
+#         dense_inputs: [Age, Popularity]
+#         video_vector: [512]
+#         """
+#         # 提取所有离散向量
+#         v_user = self.embed_user(sparse_inputs['user'])
+#         v_item = self.embed_item(sparse_inputs['item'])
+#         v_cluster = self.embed_cluster(sparse_inputs['cluster'])
+#         v_sex = self.embed_sex(sparse_inputs['sex'])
+#         v_country = self.embed_country(sparse_inputs['country'])
+#         v_province = self.embed_province(sparse_inputs['province'])
+#         v_city = self.embed_city(sparse_inputs['city'])
+#
+#         # 处理连续向量
+#         v_dense = self.bottom_mlp(dense_inputs)
+#
+#         # 投影视频向量
+#         v_video = self.video_proj(video_vector)
+#
+#         # --- 堆叠矩阵 [Batch, 9, 16] ---
+#         combined = torch.stack([
+#             v_user, v_item, v_cluster, v_sex,
+#             v_country, v_province, v_city,
+#             v_dense, v_video
+#         ], dim=1)
+#
+#         # --- 批量矩阵乘法 (点积交融) ---
+#         # [Batch, 9, 16] * [Batch, 16, 9] = [Batch, 9, 9]
+#         dot_products = torch.bmm(combined, combined.transpose(1, 2))
+#
+#         # 提取上三角 (36个交叉特征)
+#         indices = torch.triu_indices(self.num_vectors, self.num_vectors, offset=1)
+#         interactions = dot_products[:, indices[0], indices[1]]
+#
+#         # 拼接原始连续特征输出并预测
+#         x = torch.cat([interactions, v_dense], dim=1)
+#         return self.top_mlp(x)
+#
+#
+# # --- 测试函数 ---
+# def run_v2_test():
+#     # 模拟各字典大小 (根据你的 ES/MySQL 规模设定)
+#     vocab_dims = {
+#         'user': 1000, 'item': 5000, 'cluster': 8,
+#         'sex': 3, 'country': 10, 'province': 35, 'city': 300
+#     }
+#
+#     samples = 128
+#     model = VOmni_DLRM_v2(vocab_dims, dense_dim=2, video_dim=512, embed_dim=16)
+#
+#     # 构造模拟输入
+#     sparse_in = {k: torch.randint(0, v, (samples,)) for k, v in vocab_dims.items()}
+#     dense_in = torch.rand(samples, 2)
+#     video_in = torch.randn(samples, 512)
+#     labels = torch.randint(0, 2, (samples, 1)).float()
+#
+#     optimizer = optim.Adam(model.parameters(), lr=0.001)
+#     criterion = nn.BCELoss()
+#
+#     print(f"模型初始化成功！参与交融的向量数: {model.num_vectors}，交叉项数: {model.num_interactions}")
+#
+#     # 单步训练测试
+#     model.train()
+#     optimizer.zero_grad()
+#     output = model(sparse_in, dense_in, video_in)
+#     loss = criterion(output, labels)
+#     loss.backward()
+#     optimizer.step()
+#
+#     print(f"单步测试 Loss: {loss.item():.4f}")
+#     print("九个特征维度的深度交融矩阵运行正常。")
+#
+#
+# if __name__ == "__main__":
+#     run_v2_test()
 
 
 # import torch

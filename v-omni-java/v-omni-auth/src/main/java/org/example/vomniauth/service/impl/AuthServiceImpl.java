@@ -87,6 +87,7 @@ public class AuthServiceImpl implements AuthService {
         if(!emailBloomFilter.contains(email)) return AuthState.INITIAL;
 
         Long id = identityService.getIdByEmail(email);
+        System.out.println(id);
         if(id.equals(0L)) return AuthState.INITIAL;
 
         AuthEventContext authEventContext = new AuthEventContext(id).with("email", email);

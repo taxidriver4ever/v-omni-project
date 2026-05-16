@@ -1,8 +1,7 @@
 package org.example.vomniinteract.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.*;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -10,6 +9,9 @@ import java.util.Date;
 
 @Data
 @AllArgsConstructor
+@Builder
+@NoArgsConstructor  // 👈 必须有这个！
+@ToString
 public class DoLikeDto implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;

@@ -32,7 +32,6 @@ public class MediaTransitionService {
             String lua = new String(Objects.requireNonNull(is).readAllBytes(), StandardCharsets.UTF_8);
 
             String result = stringRedisTemplate.execute((RedisCallback<String>) connection -> {
-                // 强制尝试发送原生命令
                 Object response = connection.execute(
                         "FUNCTION",
                         "LOAD".getBytes(StandardCharsets.UTF_8),

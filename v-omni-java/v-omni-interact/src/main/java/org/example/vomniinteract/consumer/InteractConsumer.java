@@ -58,6 +58,7 @@ public class InteractConsumer {
     @Resource
     private DocumentUserBehaviorHistoryService documentUserBehaviorHistoryService;
 
+
     // ================= 核心演化组件注入 =================
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -153,31 +154,60 @@ public class InteractConsumer {
             // =======================
             try {
                 String tsKey = TS_MEDIA_LIKE_PREFIX + mediaId;
-                long tsTimestamp = date.getTime(); // 毫秒级时间戳
-                // 创建 TimeSeries
-                redisCommands.dispatch(
-                        io.lettuce.core.protocol.CommandType.valueOf("TS.CREATE"),
-                        new io.lettuce.core.output.StatusOutput<>(io.lettuce.core.codec.StringCodec.UTF8),
-                        new io.lettuce.core.protocol.CommandArgs<>(io.lettuce.core.codec.StringCodec.UTF8)
-                                .addKey(tsKey)
-                                .add("RETENTION")
-                                .add(7 * 24 * 60 * 60 * 1000L) // 7天毫秒
-                                .add("DUPLICATE_POLICY")
-                                .add("SUM")
+                long tsTimestamp = date.getTime();
+
+                // 1. 尝试创建时序 Key（独立 try-catch，专门用于防重）
+                try {
+                    stringRedisTemplate.execute(new org.springframework.data.redis.core.RedisCallback<Void>() {
+                        @Override
+                        public Void doInRedis(org.springframework.data.redis.connection.RedisConnection connection)
+                                throws org.springframework.dao.DataAccessException {
+                            connection.execute("TS.CREATE", new byte[][]{
+                                    tsKey.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    "RETENTION".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    String.valueOf(7 * 24 * 60 * 60 * 1000L).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    "DUPLICATE_POLICY".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    "SUM".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                            });
+                            return null;
+                        }
+                    });
+                } catch (Exception e) {
+                    if (e.getMessage() != null && e.getMessage().contains("key already exists")) {
+                        log.debug("RedisTimeSeries Key 已存在，跳过创建: {}", tsKey);
+                    } else {
+                        log.warn("RedisTimeSeries 创建引发非预期异常: {}", e.getMessage());
+                    }
+                }
+
+                // 2. 核心修复：使用 Lua 脚本，但是【极其关键】地指定返回值为 Long.class
+                // 并且采用 GenericToStringSerializer<Long>(Long.class) 显式告诉 Spring 将结果反序列化为 Long
+
+                // 构造专门处理 Long 的 Lua 脚本执行器
+                org.springframework.data.redis.core.script.DefaultRedisScript<Long> redisScript =
+                        new org.springframework.data.redis.core.script.DefaultRedisScript<>();
+                redisScript.setScriptText("return redis.call('TS.INCRBY', KEYS[1], ARGV[1], 'TIMESTAMP', ARGV[2])");
+                redisScript.setResultType(Long.class); // 👈 明确声明返回 Long 响应
+
+                // 核心：使用能够正确解析长整型数字的序列化器
+                org.springframework.data.redis.serializer.GenericToStringSerializer<Long> longSerializer =
+                        new org.springframework.data.redis.serializer.GenericToStringSerializer<>(Long.class);
+
+                Long resultTimestamp = stringRedisTemplate.execute(
+                        redisScript,
+                        stringRedisTemplate.getStringSerializer(), // KEYS[1] 的序列化器 (String)
+                        longSerializer,                            // 返回值的反序列化器 (转成 Long)
+                        java.util.Collections.singletonList(tsKey),// KEYS 参数列表
+                        String.valueOf(tsValue),              // ARGV[1]
+                        String.valueOf(tsTimestamp)                // ARGV[2]
                 );
 
-                redisCommands.dispatch(
-                        io.lettuce.core.protocol.CommandType.valueOf("TS.INCRBY"),
-                        new io.lettuce.core.output.IntegerOutput<>(io.lettuce.core.codec.StringCodec.UTF8),
-                        new io.lettuce.core.protocol.CommandArgs<>(io.lettuce.core.codec.StringCodec.UTF8)
-                                .addKey(tsKey)
-                                .add(tsTimestamp)
-                                .add(tsValue)
-                );
+                log.info("RedisTimeSeries 写入成功: mediaId={}, 返回时间戳={}", mediaId, resultTimestamp);
+
             } catch (Exception e) {
-                log.error("RedisTimeSeries 写入失败: mediaId={}, e={}", mediaId, e.getMessage());
+                log.error("RedisTimeSeries 写入自增失败: mediaId={}, 原因={}", mediaId, e.getMessage());
+                throw e; // 抛出给 Kafka 让其重试
             }
-
         });
 
         // =======================
@@ -269,31 +299,59 @@ public class InteractConsumer {
 
             try {
                 String tsKey = TS_MEDIA_COLLECTION_PREFIX + mediaId;
-                long tsTimestamp = date.getTime(); // 毫秒级时间戳
+                long tsTimestamp = date.getTime();
 
-                // 创建 TS（如果不存在）
-                redisCommands.dispatch(
-                        io.lettuce.core.protocol.CommandType.valueOf("TS.CREATE"),
-                        new io.lettuce.core.output.StatusOutput<>(io.lettuce.core.codec.StringCodec.UTF8),
-                        new io.lettuce.core.protocol.CommandArgs<>(io.lettuce.core.codec.StringCodec.UTF8)
-                                .addKey(tsKey)
-                                .add("RETENTION")
-                                .add(7 * 24 * 60 * 60 * 1000L) // 保留 7 天
-                                .add("DUPLICATE_POLICY")
-                                .add("SUM")
+                // 1. 尝试创建时序 Key（独立 try-catch，专门用于防重）
+                try {
+                    stringRedisTemplate.execute(new org.springframework.data.redis.core.RedisCallback<Void>() {
+                        @Override
+                        public Void doInRedis(org.springframework.data.redis.connection.RedisConnection connection)
+                                throws org.springframework.dao.DataAccessException {
+                            connection.execute("TS.CREATE", new byte[][]{
+                                    tsKey.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    "RETENTION".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    String.valueOf(7 * 24 * 60 * 60 * 1000L).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    "DUPLICATE_POLICY".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    "SUM".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                            });
+                            return null;
+                        }
+                    });
+                } catch (Exception e) {
+                    if (e.getMessage() != null && e.getMessage().contains("key already exists")) {
+                        log.debug("RedisTimeSeries Key 已存在，跳过创建: {}", tsKey);
+                    } else {
+                        log.warn("RedisTimeSeries 创建引发非预期异常: {}", e.getMessage());
+                    }
+                }
+
+                // 2. 核心修复：使用 Lua 脚本，但是【极其关键】地指定返回值为 Long.class
+                // 并且采用 GenericToStringSerializer<Long>(Long.class) 显式告诉 Spring 将结果反序列化为 Long
+
+                // 构造专门处理 Long 的 Lua 脚本执行器
+                org.springframework.data.redis.core.script.DefaultRedisScript<Long> redisScript =
+                        new org.springframework.data.redis.core.script.DefaultRedisScript<>();
+                redisScript.setScriptText("return redis.call('TS.INCRBY', KEYS[1], ARGV[1], 'TIMESTAMP', ARGV[2])");
+                redisScript.setResultType(Long.class); // 👈 明确声明返回 Long 响应
+
+                // 核心：使用能够正确解析长整型数字的序列化器
+                org.springframework.data.redis.serializer.GenericToStringSerializer<Long> longSerializer =
+                        new org.springframework.data.redis.serializer.GenericToStringSerializer<>(Long.class);
+
+                Long resultTimestamp = stringRedisTemplate.execute(
+                        redisScript,
+                        stringRedisTemplate.getStringSerializer(), // KEYS[1] 的序列化器 (String)
+                        longSerializer,                            // 返回值的反序列化器 (转成 Long)
+                        java.util.Collections.singletonList(tsKey),// KEYS 参数列表
+                        String.valueOf(tsValue),              // ARGV[1]
+                        String.valueOf(tsTimestamp)                // ARGV[2]
                 );
 
-                // 增量写入
-                redisCommands.dispatch(
-                        io.lettuce.core.protocol.CommandType.valueOf("TS.INCRBY"),
-                        new io.lettuce.core.output.IntegerOutput<>(io.lettuce.core.codec.StringCodec.UTF8),
-                        new io.lettuce.core.protocol.CommandArgs<>(io.lettuce.core.codec.StringCodec.UTF8)
-                                .addKey(tsKey)
-                                .add(tsTimestamp)
-                                .add(tsValue)
-                );
+                log.info("RedisTimeSeries 写入成功: mediaId={}, 返回时间戳={}", mediaId, resultTimestamp);
+
             } catch (Exception e) {
-                log.error("RedisTimeSeries 收藏写入失败: mediaId={}, e={}", mediaId, e.getMessage());
+                log.error("RedisTimeSeries 写入自增失败: mediaId={}, 原因={}", mediaId, e.getMessage());
+                throw e; // 抛出给 Kafka 让其重试
             }
         });
 
@@ -457,29 +515,57 @@ public class InteractConsumer {
                 String tsKey = TS_MEDIA_COMMENT_PREFIX + mediaId;
                 long tsTimestamp = date.getTime();
 
-                // 创建 TS
-                redisCommands.dispatch(
-                        io.lettuce.core.protocol.CommandType.valueOf("TS.CREATE"),
-                        new io.lettuce.core.output.StatusOutput<>(io.lettuce.core.codec.StringCodec.UTF8),
-                        new io.lettuce.core.protocol.CommandArgs<>(io.lettuce.core.codec.StringCodec.UTF8)
-                                .addKey(tsKey)
-                                .add("RETENTION")
-                                .add(7 * 24 * 60 * 60 * 1000L)
-                                .add("DUPLICATE_POLICY")
-                                .add("SUM")
+                // 1. 尝试创建时序 Key（独立 try-catch，专门用于防重）
+                try {
+                    stringRedisTemplate.execute(new org.springframework.data.redis.core.RedisCallback<Void>() {
+                        @Override
+                        public Void doInRedis(org.springframework.data.redis.connection.RedisConnection connection)
+                                throws org.springframework.dao.DataAccessException {
+                            connection.execute("TS.CREATE", new byte[][]{
+                                    tsKey.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    "RETENTION".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    String.valueOf(7 * 24 * 60 * 60 * 1000L).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    "DUPLICATE_POLICY".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    "SUM".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                            });
+                            return null;
+                        }
+                    });
+                } catch (Exception e) {
+                    if (e.getMessage() != null && e.getMessage().contains("key already exists")) {
+                        log.debug("RedisTimeSeries Key 已存在，跳过创建: {}", tsKey);
+                    } else {
+                        log.warn("RedisTimeSeries 创建引发非预期异常: {}", e.getMessage());
+                    }
+                }
+
+                // 2. 核心修复：使用 Lua 脚本，但是【极其关键】地指定返回值为 Long.class
+                // 并且采用 GenericToStringSerializer<Long>(Long.class) 显式告诉 Spring 将结果反序列化为 Long
+
+                // 构造专门处理 Long 的 Lua 脚本执行器
+                org.springframework.data.redis.core.script.DefaultRedisScript<Long> redisScript =
+                        new org.springframework.data.redis.core.script.DefaultRedisScript<>();
+                redisScript.setScriptText("return redis.call('TS.INCRBY', KEYS[1], ARGV[1], 'TIMESTAMP', ARGV[2])");
+                redisScript.setResultType(Long.class); // 👈 明确声明返回 Long 响应
+
+                // 核心：使用能够正确解析长整型数字的序列化器
+                org.springframework.data.redis.serializer.GenericToStringSerializer<Long> longSerializer =
+                        new org.springframework.data.redis.serializer.GenericToStringSerializer<>(Long.class);
+
+                Long resultTimestamp = stringRedisTemplate.execute(
+                        redisScript,
+                        stringRedisTemplate.getStringSerializer(), // KEYS[1] 的序列化器 (String)
+                        longSerializer,                            // 返回值的反序列化器 (转成 Long)
+                        java.util.Collections.singletonList(tsKey),// KEYS 参数列表
+                        String.valueOf(tsValue),              // ARGV[1]
+                        String.valueOf(tsTimestamp)                // ARGV[2]
                 );
 
-                // 增量写入
-                redisCommands.dispatch(
-                        io.lettuce.core.protocol.CommandType.valueOf("TS.INCRBY"),
-                        new io.lettuce.core.output.IntegerOutput<>(io.lettuce.core.codec.StringCodec.UTF8),
-                        new io.lettuce.core.protocol.CommandArgs<>(io.lettuce.core.codec.StringCodec.UTF8)
-                                .addKey(tsKey)
-                                .add(tsTimestamp)
-                                .add(tsValue)
-                );
+                log.info("RedisTimeSeries 写入成功: mediaId={}, 返回时间戳={}", mediaId, resultTimestamp);
+
             } catch (Exception e) {
-                log.error("RedisTimeSeries 评论写入失败: mediaId={}, e={}", mediaId, e.getMessage());
+                log.error("RedisTimeSeries 写入自增失败: mediaId={}, 原因={}", mediaId, e.getMessage());
+                throw e; // 抛出给 Kafka 让其重试
             }
         }
 

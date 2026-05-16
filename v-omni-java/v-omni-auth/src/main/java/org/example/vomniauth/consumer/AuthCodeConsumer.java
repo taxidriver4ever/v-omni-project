@@ -160,6 +160,11 @@ public class AuthCodeConsumer {
         Date now = new Date();
         user.setCreateTime(now);
         user.setUpdateTime(now);
+        user.setBirthYear(0);
+        user.setSex(0);
+        user.setCountry("未知");
+        user.setProvince("未知");
+        user.setCity("未知");
 
         int i = userMapper.insertUser(user);
         documentUserProfileService.createProfileOnRegistration(idString,now);
